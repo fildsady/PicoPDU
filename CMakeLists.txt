@@ -25,8 +25,14 @@ endif()
 # ====================================================================================
 set(PICO_BOARD pico2 CACHE STRING "Board type")
 
-# Pull in Raspberry Pi Pico SDK (must be before project)
+# ระบุพาธ FreeRTOS Kernel
+set(FREERTOS_KERNEL_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/FreeRTOS-Kernel)
+
+# นำเข้า Pico SDK
 include(pico_sdk_import.cmake)
+
+# นำเข้า FreeRTOS CMake scripts (ของ SMP branch)
+include(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2350_ARM_NTZ/FreeRTOS_Kernel_import.cmake)
 
 project(RP2350_RTOS_Project_Assambly C CXX ASM)
 
@@ -46,7 +52,11 @@ pico_enable_stdio_usb(RP2350_RTOS_Project_Assambly 1)
 
 # Add the standard library to the build
 target_link_libraries(RP2350_RTOS_Project_Assambly
-        pico_stdlib)
+        pico_stdlib
+        pico_multicore
+        hardware_adc
+        FreeRTOS-Kernel-Heap4
+        )
 
 # Add the standard include files to the build
 target_include_directories(RP2350_RTOS_Project_Assambly PRIVATE
