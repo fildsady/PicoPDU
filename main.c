@@ -35,14 +35,13 @@ void task_2(void *pvParameters)
         vTaskDelay(300 / portTICK_PERIOD_MS);
     } 
 }
-
-
+ 
 int main()
 {
     stdio_init_all();
 
-    xTaskCreate(task_1, "LED_Task", 256, NULL, 1, NULL);
-    xTaskCreate(task_2, "LED_Task", 256, NULL, 1, NULL);
+    xTaskCreate(task_1, "LED_Task_1", 256, NULL, 1, NULL);
+    xTaskCreate(task_2, "LED_Task_2", 256, NULL, 1, NULL);
     vTaskStartScheduler();
 
     while(1){};
