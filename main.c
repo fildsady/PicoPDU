@@ -4,23 +4,35 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define LED_PIN 2
+#define LED_PIN1 0
+#define LED_PIN2 1
 
 void task_1(void *pvParameters)
 {
+
+    gpio_init(LED_PIN1);          
+    gpio_set_dir(LED_PIN1, GPIO_OUT);
+
     while(1)
     {
-        printf("Task 1 is running\n");
-        for(int i=0;i<20000000;i++);
+        gpio_put(LED_PIN1, 1);  
+        vTaskDelay(500 / portTICK_PERIOD_MS); 
+        gpio_put(LED_PIN1, 0);  
+        vTaskDelay(500 / portTICK_PERIOD_MS);
     } 
 }
 
 void task_2(void *pvParameters)
 {
+     gpio_init(LED_PIN2);          
+     gpio_set_dir(LED_PIN2, GPIO_OUT);
+
     while(1)
     {
-        printf("Task 2 is running\n");
-        for(int i=0;i<20000000;i++);
+        gpio_put(LED_PIN2, 1);  
+        vTaskDelay(100 / portTICK_PERIOD_MS); 
+        gpio_put(LED_PIN2, 0);  
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     } 
 }
 
