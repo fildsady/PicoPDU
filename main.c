@@ -30,7 +30,7 @@ void task_2(void *pvParameters)
     while(1)
     {
         gpio_put(LED_PIN2, 1);  
-        vTaskDelay(50 / portTICK_PERIOD_MS); 
+        vTaskDelay(200 / portTICK_PERIOD_MS); 
         gpio_put(LED_PIN2, 0);  
         vTaskDelay(250 / portTICK_PERIOD_MS);
     } 
