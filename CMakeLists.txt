@@ -53,7 +53,7 @@ pico_sdk_init()
 # เรียกใช้ฟังก์ชันจาก Pico SDK เพื่อเริ่มต้นการตั้งค่าสภาพแวดล้อมที่จำเป็นทั้งหมด
 
 # Add executable. Default name is the project name, version 0.1
-add_executable(RP2350_RTOS_Project_Assambly main.c )
+add_executable(RP2350_RTOS_Project_Assambly src/main.c )
 # สร้าง Target ที่เป็นไฟล์ปฏิบัติการ (Executable) ชื่อเดียวกับชื่อโปรเจกต์
 # โดยใช้ไฟล์ต้นฉบับคือ main.c ในการคอมไพล์
 
@@ -84,7 +84,7 @@ target_link_libraries(RP2350_RTOS_Project_Assambly
 # Add the standard include files to the build
 target_include_directories(RP2350_RTOS_Project_Assambly PRIVATE
  ${CMAKE_CURRENT_LIST_DIR}
- ${CMAKE_CURRENT_SOURCE_DIR}/inc
+ ${CMAKE_CURRENT_SOURCE_DIR}/inc 
 )
 # กำหนดพาธของ Header File (Include Directories) ให้กับ Target
 # - ${CMAKE_CURRENT_LIST_DIR}: พาธของไฟล์ CMakeLists.txt ปัจจุบัน
