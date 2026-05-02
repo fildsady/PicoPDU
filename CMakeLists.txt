@@ -90,5 +90,10 @@ target_include_directories(RP2350_RTOS_Project_Assambly PRIVATE
 # - ${CMAKE_CURRENT_LIST_DIR}: พาธของไฟล์ CMakeLists.txt ปัจจุบัน
 # - ${CMAKE_CURRENT_SOURCE_DIR}/inc: พาธไปยังโฟลเดอร์ 'inc' (หากมี Header File ที่กำหนดเอง)
 
+# แสดง memory usage หลัง build
+target_link_options(${PROJECT_NAME} PRIVATE
+    -Wl,--print-memory-usage
+    -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.map
+)
 pico_add_extra_outputs(RP2350_RTOS_Project_Assambly)
 # สั่งให้ Pico SDK สร้างไฟล์เอาต์พุตเพิ่มเติม (เช่น .uf2 สำหรับอัปโหลด)
