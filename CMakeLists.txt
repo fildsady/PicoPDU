@@ -12,6 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # (note this can come from environment, CMake cache etc)
 
 # == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
+# ส่วนนี้ถูกสร้างโดยอัตโนมัติ (Scaffolding) เพื่อรองรับส่วนขยาย (Extension) ของ VS Code
 if(WIN32)
     set(USERHOME $ENV{USERPROFILE})
 else()
@@ -106,8 +107,7 @@ target_link_libraries(RP2350_RTOS_Project_Assambly
 # Add the standard include files to the build
 target_include_directories(RP2350_RTOS_Project_Assambly PRIVATE
  ${CMAKE_CURRENT_LIST_DIR}
- ${CMAKE_CURRENT_SOURCE_DIR}/inc 
- ${CMAKE_CURRENT_SOURCE_DIR}/include
+ ${CMAKE_CURRENT_SOURCE_DIR}/inc
 )
 # กำหนดพาธของ Header File (Include Directories) ให้กับ Target
 # - ${CMAKE_CURRENT_LIST_DIR}: พาธของไฟล์ CMakeLists.txt ปัจจุบัน
