@@ -53,22 +53,6 @@ project(RP2350_RTOS_Project_Assambly C CXX ASM)
 pico_sdk_init()
 # เรียกใช้ฟังก์ชันจาก Pico SDK เพื่อเริ่มต้นการตั้งค่าสภาพแวดล้อมที่จำเป็นทั้งหมด
 
-# โหลดไลบรารี CMSIS-DSP จาก GitHub ของ ARM แบบอัตโนมัติ
-include(FetchContent)
-
-FetchContent_Declare(
-    CMSISDSP
-    GIT_REPOSITORY https://github.com/ARM-software/CMSIS-DSP.git
-    GIT_TAG        v1.15.0
-)
-FetchContent_MakeAvailable(CMSISDSP)
-
-# ผูกไลบรารี cmsis_core ของ Pico SDK เข้ากับ CMSISDSP เพื่อให้หาไฟล์ cmsis_compiler.h เจอ
-target_link_libraries(CMSISDSP PUBLIC cmsis_core)
-
-# เลี่ยงบั๊กของคอมไพเลอร์ GCC 14 (Internal Compiler Error) โดยลด Optimize ลง
-target_compile_options(CMSISDSP PRIVATE -Os -fno-if-conversion)
-
 # Add executable. Default name is the project name, version 0.1
 add_executable(RP2350_RTOS_Project_Assambly 
     src/main.c 
@@ -91,12 +75,7 @@ pico_enable_stdio_usb(RP2350_RTOS_Project_Assambly 1)
 # Add the standard library to the build
 target_link_libraries(RP2350_RTOS_Project_Assambly
         pico_stdlib
-        pico_multicore
-        hardware_adc
         FreeRTOS-Kernel-Heap4
-        m
-        CMSISDSP
-        cmsis_core
  )
 # เชื่อมโยง (Link) Libraries ที่ Target ต้องใช้ในการคอมไพล์และรัน:
 # - pico_stdlib: Libraries พื้นฐานของ Pico
