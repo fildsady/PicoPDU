@@ -96,19 +96,51 @@ ERR: unknown command
 
 ## FreeRTOS Task Structure
 
-```
-┌─────────────────┐   Queue (command_t)   ┌──────────────────┐   lcd_state   ┌──────────────┐
-│  task_uart_rx   │ ────────────────────→ │  task_dfplayer   │ ────────────→ │  task_lcd    │
-│  (priority 2)   │                       │  (priority 1)    │               │  (priority 1)│
-│                 │                       │                  │               │              │
-│ รับ USB Serial  │                       │ ขับ DFPlayer     │               │ อัปเดต LCD  │
-│ parse command   │                       │ monitor BUSY pin │               │ ทุก 500ms    │
-└─────────────────┘                       └──────────────────┘               └──────────────┘
+```mermaid
+flowchart TD
+    BOOT([Boot / main]) --> Q[xQueueCreate]
+    Q --> T1 & T2 & T3 & T4
 
-┌──────────────────┐
-│  task_status_led │  blink GP25 ทุก 250ms
-│  (priority 1)    │
-└──────────────────┘
+    subgraph T1["task_uart_rx  •  priority 2"]
+        direction TB
+        A1[getchar_timeout_us\n10ms poll] --> A2{newline?}
+        A2 -- yes --> A3[parse_and_enqueue]
+        A2 -- no --> A4[buffer char]
+        A4 --> A1
+        A3 --> A1
+    end
+
+    subgraph T2["task_dfplayer  •  priority 1"]
+        direction TB
+        B0[dfplayer_init\nvol 20] --> B1[xQueueReceive\n200ms timeout]
+        B1 --> B2{cmd received?}
+        B2 -- yes --> B3[switch cmd\ndrive DFPlayer]
+        B3 --> B4[update lcd_state]
+        B4 --> B5[check BUSY pin]
+        B2 -- no --> B5
+        B5 --> B1
+    end
+
+    subgraph T3["task_lcd  •  priority 1"]
+        direction TB
+        C0[lcd_init] --> C1[read lcd_state]
+        C1 --> C2[lcd_buff_printf]
+        C2 --> C3[put_buff_to_lcd]
+        C3 --> C4[vTaskDelay 500ms]
+        C4 --> C1
+    end
+
+    subgraph T4["task_status_led  •  priority 1"]
+        direction TB
+        D0[gpio_init GP25] --> D1[LED ON]
+        D1 --> D2[vTaskDelay 250ms]
+        D2 --> D3[LED OFF]
+        D3 --> D4[vTaskDelay 250ms]
+        D4 --> D1
+    end
+
+    A3 -- "cmd_queue\ncommand_t" --> B1
+    B4 -- "lcd_state\nvolatile struct" --> C1
 ```
 
 | Task | Priority | Stack | หน้าที่ |
