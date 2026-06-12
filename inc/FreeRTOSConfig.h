@@ -55,7 +55,7 @@
 #define configMESSAGE_BUFFER_LENGTH_TYPE        size_t    // ชนิดข้อมูลของ message buffer length
 #define configSUPPORT_STATIC_ALLOCATION         0         // ไม่รองรับการจัดสรรหน่วยความจำแบบ static
 #define configSUPPORT_DYNAMIC_ALLOCATION        1         // รองรับการจัดสรรหน่วยความจำแบบ dynamic
-#define configTOTAL_HEAP_SIZE                   (128*1024) // ขนาด heap ทั้งหมด 128 KB
+#define configTOTAL_HEAP_SIZE                   (200*1024) // 200KB — เพิ่มจาก 128KB เพื่อรองรับ lwIP + WiFi driver
 #define configAPPLICATION_ALLOCATED_HEAP        0         // ไม่ใช้ heap ที่จัดสรรโดยแอปพลิเคชันเอง
 
 /*-----------------------------------------------------------

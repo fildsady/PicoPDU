@@ -43,5 +43,9 @@
 #define LWIP_HTTPD_SSI_INCLUDE_TAG      0
 #define HTTPD_USE_CUSTOM_FSDATA         0
 
-// FreeRTOS sys_arch
+// FreeRTOS sys_arch — required by pico_cyw43_arch_lwip_sys_freertos
 #define LWIP_FREERTOS_SYS_ARCH_TIMEOUT_USES_TICKS 1
+#define TCPIP_THREAD_STACKSIZE          1024  // stack for lwIP tcpip_thread (words)
+#define TCPIP_THREAD_PRIO               8     // higher than app tasks (1-2)
+#define DEFAULT_THREAD_STACKSIZE        256
+#define DEFAULT_THREAD_PRIO             1
