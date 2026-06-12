@@ -13,6 +13,17 @@
 
 volatile bool cyw43_ready = false;
 
+void vApplicationStackOverflowHook(TaskHandle_t t, char *name) {
+    (void)t;
+    printf("[FATAL] stack overflow: task=%s\r\n", name);
+    while (1) {}
+}
+
+void vApplicationMallocFailedHook(void) {
+    printf("[FATAL] malloc failed\r\n");
+    while (1) {}
+}
+
 #define CMD_QUEUE_LEN   8   // max pending commands waiting to execute
 #define LINE_BUF_SIZE   64  // max length of one command line
 #define DEFAULT_VOLUME  20  // startup volume (0-30)
