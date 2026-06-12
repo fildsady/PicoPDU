@@ -8,7 +8,7 @@
 #define DFPLAYER_BAUD     9600
 #define DFPLAYER_TX_PIN   0  // TX → DFPlayer RX
 #define DFPLAYER_RX_PIN   1  // RX ← DFPlayer TX
-#define DFPLAYER_BUSY_PIN 2  // BUSY ← DFPlayer (LOW = playing, HIGH = idle)
+#define DFPLAYER_BUSY_PIN 15  // BUSY ← DFPlayer (LOW = playing, HIGH = idle)
 
 // Send 10-byte command frame per DFPlayer Mini protocol:
 // [0x7E][0xFF][0x06][CMD][0x00][ParamH][ParamL][ChkH][ChkL][0xEF]

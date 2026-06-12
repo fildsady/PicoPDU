@@ -10,14 +10,14 @@
 |---------|------------|
 | MCU | Raspberry Pi Pico 2 (RP2350) |
 | MP3 Module | DFPlayer Mini |
-| การเชื่อมต่อ | UART0 — GP0 (TX) → DFPlayer RX, GP1 (RX) → DFPlayer TX, GP2 ← DFPlayer BUSY |
+| การเชื่อมต่อ | UART0 — GP0 (TX) → DFPlayer RX, GP1 (RX) → DFPlayer TX, GP15 ← DFPlayer BUSY |
 | Interface | USB CDC (Serial Monitor) สำหรับรับคำสั่งจาก PC |
 
 ```
 Pico 2
  GP0 (TX) ──────────────→ RX   DFPlayer Mini
  GP1 (RX) ←────────────── TX
- GP2 (IN) ←────────────── BUSY  (LOW = playing, HIGH = idle)
+ GP15 (IN) ←───────────── BUSY  (LOW = playing, HIGH = idle)
  GND      ─────────────── GND
  3.3V/5V  ─────────────── VCC
                            SPK+ → ลำโพง
