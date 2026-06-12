@@ -98,12 +98,9 @@
 /*-----------------------------------------------------------
  * 🧠 การตั้งค่าสำหรับระบบ SMP (Multi-core)
  *----------------------------------------------------------*/
-#define configNUMBER_OF_CORES                   2   // RP2040/RP2350 มี 2 core
-#define configRUN_MULTIPLE_PRIORITIES           1   // รองรับหลาย priority พร้อมกัน
-#if configNUMBER_OF_CORES > 1
-    #define configUSE_CORE_AFFINITY             1   // เปิดใช้การผูก task กับ core เฉพาะ (Affinity)
-#endif
-#define configUSE_PASSIVE_IDLE_HOOK             0   // ปิด Passive Idle Hook
+#define configNUMBER_OF_CORES                   1   // single-core — CYW43 WiFi driver ไม่รองรับ FreeRTOS SMP
+#define configRUN_MULTIPLE_PRIORITIES           1
+#define configUSE_PASSIVE_IDLE_HOOK             0
 
 /*-----------------------------------------------------------
  * 🪶 การตั้งค่าพิเศษของ RP2040/RP2350

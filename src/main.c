@@ -358,7 +358,7 @@ int main(void) {
     xTaskCreate(task_dfplayer,   "DFPlayer",  512,  NULL, 1, NULL);
     xTaskCreate(task_lcd,        "LCD",       512,  NULL, 1, NULL);
     xTaskCreate(task_buttons,    "Buttons",   256,  NULL, 1, NULL);
-    xTaskCreate(task_webserver,  "WebServer", 1024, NULL, 3, NULL); // priority 3 — WiFi init needs to run early
+    xTaskCreate(task_webserver,  "WebServer", 2048, NULL, 3, NULL); // large stack — cyw43_arch_init needs it
 
     vTaskStartScheduler(); // start FreeRTOS — should never return
     while (1) {}

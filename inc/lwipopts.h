@@ -7,7 +7,7 @@
 #define LWIP_SOCKET                     0
 #define MEM_LIBC_MALLOC                 0
 #define MEM_ALIGNMENT                   4
-#define MEM_SIZE                        4000
+#define MEM_SIZE                        8000  // เพิ่มจาก 4000 — CYW43 ต้องการ buffer มากขึ้น
 #define MEMP_NUM_TCP_SEG                32
 #define PBUF_POOL_SIZE                  24
 #define LWIP_ARP                        1
@@ -45,7 +45,7 @@
 
 // FreeRTOS sys_arch — required by pico_cyw43_arch_lwip_sys_freertos
 #define LWIP_FREERTOS_SYS_ARCH_TIMEOUT_USES_TICKS 1
-#define TCPIP_THREAD_STACKSIZE          1024  // stack for lwIP tcpip_thread (words)
+#define TCPIP_THREAD_STACKSIZE          2048  // stack for lwIP tcpip_thread (words)
 #define TCPIP_THREAD_PRIO               8     // higher than app tasks (1-2)
 #define DEFAULT_THREAD_STACKSIZE        256
 #define DEFAULT_THREAD_PRIO             1
