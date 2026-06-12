@@ -16,9 +16,10 @@
 #define LINE_BUF_SIZE   64  // max length of one command line
 #define DEFAULT_VOLUME  20  // startup volume (0-30)
 
-#define BTN_PREV_PIN    20  // GP20 — prev track
-#define BTN_NEXT_PIN    21  // GP21 — next track
+#define BTN_PREV_PIN    20  // GP20 — select prev track
+#define BTN_NEXT_PIN    21  // GP21 — select next track
 #define BTN_PLAY_PIN    22  // GP22 — toggle play/stop
+#define MAX_TRACK       99  // highest track number on SD card
 
 // command types received from Serial
 typedef enum {
@@ -229,8 +230,10 @@ static void task_dfplayer(void *pvParameters) {
     }
 }
 
-// Task: poll physical buttons every 50ms with debounce
-// GP20=prev, GP21=next, GP22=toggle play/stop (active LOW, internal pull-up)
+// Task: poll physical buttons every 50ms with falling-edge debounce
+// GP20 — select prev track (no play, wraps 1→MAX_TRACK)
+// GP21 — select next track (no play, wraps MAX_TRACK→1)
+// GP22 — if stopped: play selected track; if playing: stop
 static void task_buttons(void *pvParameters) {
     (void)pvParameters;
 
@@ -243,6 +246,7 @@ static void task_buttons(void *pvParameters) {
 
     bool last[3] = { true, true, true }; // released = HIGH
     bool cur[3];
+    int  selected_track = 1; // currently highlighted track (not necessarily playing)
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -250,24 +254,29 @@ static void task_buttons(void *pvParameters) {
         for (int i = 0; i < 3; i++)
             cur[i] = gpio_get(btn_pins[i]);
 
-        // detect falling edge (pressed)
         command_t cmd = { .type = CMD_UNKNOWN, .arg = 0 };
 
-        if (!cur[0] && last[0]) {           // GP20 — prev
-            cmd.type = CMD_PREV;
-            xQueueSend(cmd_queue, &cmd, 0);
-            printf("BTN: prev\r\n");
+        if (!cur[0] && last[0]) {           // GP20 — prev track
+            selected_track = (selected_track <= 1) ? MAX_TRACK : selected_track - 1;
+            lcd_state.track = selected_track; // update LCD immediately
+            printf("BTN: select track %d\r\n", selected_track);
         }
-        if (!cur[1] && last[1]) {           // GP21 — next
-            cmd.type = CMD_NEXT;
-            xQueueSend(cmd_queue, &cmd, 0);
-            printf("BTN: next\r\n");
+        if (!cur[1] && last[1]) {           // GP21 — next track
+            selected_track = (selected_track >= MAX_TRACK) ? 1 : selected_track + 1;
+            lcd_state.track = selected_track; // update LCD immediately
+            printf("BTN: select track %d\r\n", selected_track);
         }
         if (!cur[2] && last[2]) {           // GP22 — toggle play/stop
-            cmd.type = lcd_state.playing ? CMD_STOP : CMD_PLAY;
-            cmd.arg  = lcd_state.playing ? 0 : 1;
-            xQueueSend(cmd_queue, &cmd, 0);
-            printf("BTN: %s\r\n", lcd_state.playing ? "stop" : "play");
+            if (lcd_state.playing) {
+                cmd.type = CMD_STOP;
+                xQueueSend(cmd_queue, &cmd, 0);
+                printf("BTN: stop\r\n");
+            } else {
+                cmd.type = CMD_PLAY;
+                cmd.arg  = selected_track;
+                xQueueSend(cmd_queue, &cmd, 0);
+                printf("BTN: play track %d\r\n", selected_track);
+            }
         }
 
         for (int i = 0; i < 3; i++)
