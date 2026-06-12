@@ -1,67 +1,135 @@
-# 📦 MP3 Control Project
+# MP3 Control Project
 
-โปรเจกต์นี้เป็นพื้นที่สำหรับรวบรวมโค้ดและตัวอย่างการทำงานต่างๆ (Code Repository & Examples) เท่านั้น
+ระบบควบคุม DFPlayer Mini ผ่าน Serial command บน Raspberry Pi Pico 2 (RP2350) + FreeRTOS
 
-⚠️ **คำแนะนำการใช้งาน:**
-หากต้องการเริ่มเขียนงานใหม่ พัฒนาฟีเจอร์เพิ่มเติม หรือทดลองโค้ด **กรุณาสร้าง Branch ใหม่แยกออกไปจากเส้นหลัก** เพื่อไม่ให้การแก้ไขไปกระทบกับโค้ดโปรเจกต์หลักและตัวอย่างที่มีอยู่
+---
 
-### 🌿 วิธีการแตก Branch ใหม่
+## Hardware
 
-คุณสามารถสร้างและสลับไปยัง Branch ใหม่ได้ง่ายๆ ผ่าน Command Line ด้วยคำสั่งต่อไปนี้:
+| อุปกรณ์ | รายละเอียด |
+|---------|------------|
+| MCU | Raspberry Pi Pico 2 (RP2350) |
+| MP3 Module | DFPlayer Mini |
+| การเชื่อมต่อ | UART0 — GP0 (TX) → DFPlayer RX, GP1 (RX) → DFPlayer TX |
+| Interface | USB CDC (Serial Monitor) สำหรับรับคำสั่งจาก PC |
 
-```bash
-# 1. อัปเดตโค้ดในเครื่องให้ตรงกับเซิร์ฟเวอร์หลักก่อน
-git pull origin main
-
-# 2. สร้างและสลับไปยัง Branch ใหม่ (เปลี่ยน <branch-name> เป็นชื่องานของคุณ เช่น feature/add-new-sensor)
-git checkout -b <branch-name>
-
-# 3. ดัน (Push) Branch ใหม่ขึ้นไปยัง GitHub เพื่อบันทึกงาน
-git push -u origin <branch-name>
+```
+Pico 2
+ GP0 (TX) ──────────────→ RX   DFPlayer Mini
+ GP1 (RX) ←────────────── TX
+ GND      ─────────────── GND
+ 3.3V/5V  ─────────────── VCC
+                           SPK+ → ลำโพง
+                           SPK- → ลำโพง
 ```
 
------
+---
 
-### 🛠️ โครงสร้างและการตั้งค่า `CMakeLists.txt`
+## คำสั่งที่ใช้ได้ (Serial Commands)
 
-โปรเจกต์นี้มีการตั้งค่า `CMakeLists.txt` ที่ออกแบบมาสำหรับ **Raspberry Pi Pico 2 (RP2350)** และเชื่อมต่อกับ **FreeRTOS** โดยมีจุดสำคัญดังนี้:
+พิมพ์คำสั่งแล้วกด Enter ผ่าน Serial Monitor (115200 baud, USB)
 
-- **ระบุบอร์ดเป็น Pico 2:** ใช้คำสั่ง `set(PICO_BOARD pico2)` เพื่อระบุสถาปัตยกรรมเป้าหมายให้ถูกต้อง
-- **กำหนดพาธ FreeRTOS:** มีการเชื่อมโยงโฟลเดอร์ `lib/FreeRTOS-Kernel` และโหลดสคริปต์ของ FreeRTOS สำหรับสถาปัตยกรรม RP2350 (`RP2350_ARM_NTZ`)
-- **การตั้งค่า I/O (สำหรับ printf):**
-  - **ปิด** การส่งข้อความผ่านขา UART: `pico_enable_stdio_uart(... 0)`
-  - **เปิด** การส่งข้อความผ่าน USB (Serial Monitor): `pico_enable_stdio_usb(... 1)`
-- **ไลบรารีที่ใช้ (target_link_libraries):** โปรเจกต์นี้เปิดใช้งาน `pico_stdlib`, `pico_multicore`, `hardware_adc` รวมถึงระบบจัดการหน่วยความจำของ RTOS คือ `FreeRTOS-Kernel-Heap4`
+| คำสั่ง | ผลลัพธ์ |
+|--------|---------|
+| `play <n>` | เล่น track ที่ n (1–99) |
+| `stop` | หยุดเล่น |
+| `next` | track ถัดไป |
+| `prev` | track ก่อนหน้า |
+| `vol <n>` | ตั้ง volume (0–30) |
+| `repeat all` | วนเล่นทุก track |
+| `repeat one` | วนเล่น track ปัจจุบัน |
+| `repeat off` | ปิด repeat |
 
-💡 **ข้อควรระวัง:** หากคุณเขียนไฟล์ต้นฉบับภาษา C เพิ่มเติม (ไฟล์ `.c` ใหม่) อย่าลืมนำชื่อไฟล์นั้นไปเพิ่มในคำสั่ง `add_executable(...)` ภายในไฟล์ `CMakeLists.txt` เสมอ เพื่อให้คอมไพเลอร์นำโค้ดของคุณไปรวมในโปรแกรมด้วย
+ตัวอย่าง:
+```
+> play 1
+OK: playing track 1
+> vol 20
+OK: volume set to 20
+> repeat all
+OK: repeat all
+> stop
+OK: stopped
+> xyz
+ERR: unknown command
+```
 
------
+---
 
-### 🚀 วิธีการ Build โปรเจกต์ผ่าน Command Line
+## FreeRTOS Task Structure
 
-1. สร้างโฟลเดอร์สำหรับ Build:
-   ```bash
-   mkdir build
-   cd build
-   ```
-2. รัน CMake และ Build:
-   ```bash
-   cmake ..
-   make
-   ```
-3. นำไฟล์ `.uf2` ที่ได้จากโฟลเดอร์ `build` ไปใส่ในบอร์ด RP2350 ของคุณ
+```
+┌─────────────────┐     Queue (command_t)     ┌──────────────────┐
+│  task_uart_rx   │ ─────────────────────────→ │  task_dfplayer   │
+│  (priority 2)   │                            │  (priority 1)    │
+│                 │                            │                  │
+│ รับ char จาก    │                            │ ส่ง byte frame   │
+│ USB CDC         │                            │ ไป DFPlayer Mini │
+│ parse command   │                            │ via UART0        │
+└─────────────────┘                            └──────────────────┘
 
------
+┌──────────────────┐
+│  task_status_led │
+│  (priority 1)    │
+│                  │
+│ blink GP25 LED   │
+│ ทุก 250ms        │
+│ (บอร์ดยังทำงาน) │
+└──────────────────┘
+```
 
-### 📁 โครงสร้างโปรเจกต์
+| Task | Priority | Stack | หน้าที่ |
+|------|----------|-------|---------|
+| `task_uart_rx` | 2 | 512 words | รับ command จาก USB, parse, ส่ง Queue |
+| `task_dfplayer` | 1 | 512 words | รับจาก Queue, ขับ DFPlayer ผ่าน UART0 |
+| `task_status_led` | 1 | 256 words | blink LED GP25 ทุก 250ms |
 
-```text
+---
+
+## โครงสร้างไฟล์
+
+```
 MP3 Control Project/
-├── build/                # โฟลเดอร์สำหรับไฟล์ที่ได้จากการ build (สร้างโดย CMake)
-├── inc/                  # โฟลเดอร์สำหรับเก็บ Header files (.h) ของโปรเจกต์
-├── lib/                  # โฟลเดอร์สำหรับเก็บไลบรารีภายนอก
-│   └── FreeRTOS-Kernel/  # ไลบรารี FreeRTOS
-├── src/                  # โฟลเดอร์สำหรับเก็บซอร์สโค้ด (.c)
-│   └── main.c            # ไฟล์โค้ดหลักของโปรแกรม
-└── CMakeLists.txt        # ไฟล์สำหรับตั้งค่าการคอมไพล์ด้วย CMake
+├── inc/
+│   ├── FreeRTOSConfig.h     # ตั้งค่า FreeRTOS kernel
+│   └── dfplayer.h           # DFPlayer Mini API
+├── lib/
+│   └── FreeRTOS-Kernel/     # FreeRTOS submodule
+├── src/
+│   ├── main.c               # Tasks, Queue, command parser
+│   └── dfplayer.c           # UART0 driver สำหรับ DFPlayer Mini
+├── CMakeLists.txt
+└── pico_sdk_import.cmake
 ```
+
+---
+
+## Build
+
+**ต้องการ:** Pico SDK 2.2.0, ARM GCC 15.2, CMake, Ninja
+
+```powershell
+$cmake   = "C:\Users\<user>\.pico-sdk\cmake\v3.31.5\bin\cmake.exe"
+$ninja   = "C:\Users\<user>\.pico-sdk\ninja\v1.12.1\ninja.exe"
+$sdk     = "C:\Users\<user>\.pico-sdk\sdk\2.2.0"
+$project = "<path>\MP3 Control Project"
+
+& $cmake -S "$project" -B "$project\build" `
+  -DPICO_SDK_PATH="$sdk" -DPICO_BOARD=pico2 `
+  -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_MAKE_PROGRAM="$ninja" -G Ninja
+
+& $ninja -C "$project\build"
+```
+
+ไฟล์ `.uf2` จะอยู่ที่ `build/MP3_Control_Project.uf2` — กด BOOTSEL แล้วลาก drop ลงบอร์ดได้เลย
+
+---
+
+## Branches
+
+| Branch | คำอธิบาย |
+|--------|----------|
+| `main` | พัฒนาหลัก |
+| `feature/dfplayer-uart-control-demo` | Demo DFPlayer Mini ผ่าน Serial command |
+| `Blink_Test` | LED blink ทดสอบบอร์ด |
