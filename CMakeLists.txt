@@ -57,6 +57,7 @@ pico_sdk_init()
 add_executable(MP3_Control_Project
     src/main.c
     src/dfplayer.c
+    src/i2c_lcd.c
 )
 # สร้าง Target ที่เป็นไฟล์ปฏิบัติการ (Executable) ชื่อเดียวกับชื่อโปรเจกต์
 # โดยใช้ไฟล์ต้นฉบับคือ main.c ในการคอมไพล์
@@ -76,6 +77,7 @@ pico_enable_stdio_usb(MP3_Control_Project 1)
 target_link_libraries(MP3_Control_Project
         pico_stdlib
         hardware_uart
+        hardware_i2c
         FreeRTOS-Kernel-Heap4
 )
 # เชื่อมโยง (Link) Libraries ที่ Target ต้องใช้ในการคอมไพล์และรัน:

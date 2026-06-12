@@ -3,6 +3,7 @@
 #include "task.h"
 #include "queue.h"
 #include "dfplayer.h"
+#include "i2c_lcd.h"
 #include "hardware/gpio.h"
 #include <stdio.h>
 #include <string.h>
@@ -35,6 +36,15 @@ typedef struct {
 } command_t;
 
 static QueueHandle_t cmd_queue;
+
+// shared LCD state — written by task_dfplayer, read by task_lcd
+typedef struct {
+    int  track;
+    int  volume;
+    bool playing;
+} lcd_state_t;
+
+static volatile lcd_state_t lcd_state = { .track = 0, .volume = DEFAULT_VOLUME, .playing = false };
 
 // parse text command into command_t and push to Queue
 static void parse_and_enqueue(const char *line) {
@@ -73,6 +83,32 @@ static void parse_and_enqueue(const char *line) {
     }
 
     xQueueSend(cmd_queue, &cmd, 0);
+}
+
+// Task: update LCD every 500ms with current track, volume, and play state
+static void task_lcd(void *pvParameters) {
+    (void)pvParameters;
+    lcd_init();
+    lcd_clear_buff_all();
+    lcd_buff_printf(0, 0, "MP3 Controller");
+    lcd_buff_printf(1, 0, "Ready");
+    put_buff_to_lcd();
+
+    while (1) {
+        lcd_clear_buff_all();
+        if (lcd_state.track > 0)
+            lcd_buff_printf(0, 0, "Track: %d", lcd_state.track);
+        else
+            lcd_buff_printf(0, 0, "MP3 Controller");
+
+        if (lcd_state.playing)
+            lcd_buff_printf(1, 0, "Vol:%d Playing", lcd_state.volume);
+        else
+            lcd_buff_printf(1, 0, "Vol:%d Stopped", lcd_state.volume);
+
+        put_buff_to_lcd();
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
 }
 
 // Task: blink GP25 LED every 250ms — indicates board is alive
@@ -132,10 +168,13 @@ static void task_dfplayer(void *pvParameters) {
         // (DFPlayer briefly pulses BUSY HIGH between loops, which would spam Serial)
         bool is_busy = dfplayer_is_busy();
         if (!repeat_active) {
-            if (is_busy && !was_busy)
+            if (is_busy && !was_busy) {
+                lcd_state.playing = true;
                 printf("INFO: playing\r\n");
-            else if (!is_busy && was_busy)
+            } else if (!is_busy && was_busy) {
+                lcd_state.playing = false;
                 printf("INFO: track finished\r\n");
+            }
         }
         was_busy = is_busy;
 
@@ -144,6 +183,7 @@ static void task_dfplayer(void *pvParameters) {
         switch (cmd.type) {
             case CMD_PLAY:
                 current_track = cmd.arg;
+                lcd_state.track = current_track;
                 dfplayer_play((uint16_t)current_track);
                 printf("OK: playing track %d\r\n", current_track);
                 break;
@@ -160,6 +200,7 @@ static void task_dfplayer(void *pvParameters) {
                 printf("OK: previous track\r\n");
                 break;
             case CMD_VOLUME:
+                lcd_state.volume = cmd.arg;
                 dfplayer_volume((uint8_t)cmd.arg);
                 printf("OK: volume set to %d\r\n", cmd.arg);
                 break;
@@ -189,10 +230,11 @@ int main(void) {
 
     cmd_queue = xQueueCreate(CMD_QUEUE_LEN, sizeof(command_t));
 
-    // create 3 tasks — scheduler manages priority
-    xTaskCreate(task_status_led, "StatusLED", 256, NULL, 1, NULL);
-    xTaskCreate(task_uart_rx,    "UART_RX",   512, NULL, 2, NULL);
-    xTaskCreate(task_dfplayer,   "DFPlayer",  512, NULL, 1, NULL);
+    // create 4 tasks — scheduler manages priority
+    xTaskCreate(task_status_led, "StatusLED", 256,  NULL, 1, NULL);
+    xTaskCreate(task_uart_rx,    "UART_RX",   512,  NULL, 2, NULL);
+    xTaskCreate(task_dfplayer,   "DFPlayer",  512,  NULL, 1, NULL);
+    xTaskCreate(task_lcd,        "LCD",       512,  NULL, 1, NULL);
 
     vTaskStartScheduler(); // start FreeRTOS — should never return
     while (1) {}
