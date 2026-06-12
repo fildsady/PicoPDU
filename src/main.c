@@ -16,6 +16,10 @@
 #define LINE_BUF_SIZE   64  // max length of one command line
 #define DEFAULT_VOLUME  20  // startup volume (0-30)
 
+#define BTN_PREV_PIN    20  // GP20 — prev track
+#define BTN_NEXT_PIN    21  // GP21 — next track
+#define BTN_PLAY_PIN    22  // GP22 — toggle play/stop
+
 // command types received from Serial
 typedef enum {
     CMD_PLAY,
@@ -225,16 +229,63 @@ static void task_dfplayer(void *pvParameters) {
     }
 }
 
+// Task: poll physical buttons every 50ms with debounce
+// GP20=prev, GP21=next, GP22=toggle play/stop (active LOW, internal pull-up)
+static void task_buttons(void *pvParameters) {
+    (void)pvParameters;
+
+    const uint btn_pins[] = { BTN_PREV_PIN, BTN_NEXT_PIN, BTN_PLAY_PIN };
+    for (int i = 0; i < 3; i++) {
+        gpio_init(btn_pins[i]);
+        gpio_set_dir(btn_pins[i], GPIO_IN);
+        gpio_pull_up(btn_pins[i]);
+    }
+
+    bool last[3] = { true, true, true }; // released = HIGH
+    bool cur[3];
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+
+        for (int i = 0; i < 3; i++)
+            cur[i] = gpio_get(btn_pins[i]);
+
+        // detect falling edge (pressed)
+        command_t cmd = { .type = CMD_UNKNOWN, .arg = 0 };
+
+        if (!cur[0] && last[0]) {           // GP20 — prev
+            cmd.type = CMD_PREV;
+            xQueueSend(cmd_queue, &cmd, 0);
+            printf("BTN: prev\r\n");
+        }
+        if (!cur[1] && last[1]) {           // GP21 — next
+            cmd.type = CMD_NEXT;
+            xQueueSend(cmd_queue, &cmd, 0);
+            printf("BTN: next\r\n");
+        }
+        if (!cur[2] && last[2]) {           // GP22 — toggle play/stop
+            cmd.type = lcd_state.playing ? CMD_STOP : CMD_PLAY;
+            cmd.arg  = lcd_state.playing ? 0 : 1;
+            xQueueSend(cmd_queue, &cmd, 0);
+            printf("BTN: %s\r\n", lcd_state.playing ? "stop" : "play");
+        }
+
+        for (int i = 0; i < 3; i++)
+            last[i] = cur[i];
+    }
+}
+
 int main(void) {
     stdio_init_all();
 
     cmd_queue = xQueueCreate(CMD_QUEUE_LEN, sizeof(command_t));
 
-    // create 4 tasks — scheduler manages priority
+    // create 5 tasks — scheduler manages priority
     xTaskCreate(task_status_led, "StatusLED", 256,  NULL, 1, NULL);
     xTaskCreate(task_uart_rx,    "UART_RX",   512,  NULL, 2, NULL);
     xTaskCreate(task_dfplayer,   "DFPlayer",  512,  NULL, 1, NULL);
     xTaskCreate(task_lcd,        "LCD",       512,  NULL, 1, NULL);
+    xTaskCreate(task_buttons,    "Buttons",   256,  NULL, 1, NULL);
 
     vTaskStartScheduler(); // start FreeRTOS — should never return
     while (1) {}

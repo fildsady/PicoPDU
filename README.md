@@ -31,13 +31,19 @@ Pico 2                          LCD 16x2 I2C
  GP3  (SCL) ─────────────────→  SCL
  GND        ─────────────────── GND
  3.3V/5V    ─────────────────── VCC
+
+Pico 2                          Buttons (active LOW)
+ GP20 (IN)  ────── BTN ── GND   Prev track
+ GP21 (IN)  ────── BTN ── GND   Next track
+ GP22 (IN)  ────── BTN ── GND   Toggle Play/Stop
 ```
 
 ---
 
 ## Features
 
-- รับคำสั่ง text ผ่าน USB Serial — ไม่ต้องต่อปุ่มเพิ่ม
+- รับคำสั่ง text ผ่าน USB Serial — ควบคุมได้จาก PC
+- ปุ่มกดจริง GP20/GP21/GP22 — prev / next / toggle play/stop
 - ควบคุม play / stop / next / prev / volume / repeat
 - แสดงสถานะ track และ volume บน LCD 16x2 แบบ real-time
 - BUSY pin monitor — แจ้งทาง Serial เมื่อเริ่มเล่นและจบ
@@ -99,7 +105,7 @@ ERR: unknown command
 ```mermaid
 flowchart TD
     BOOT([Boot / main]) --> Q[xQueueCreate]
-    Q --> T1 & T2 & T3 & T4
+    Q --> T1 & T2 & T3 & T4 & T5
 
     subgraph T1["task_uart_rx  •  priority 2"]
         direction TB
@@ -139,7 +145,21 @@ flowchart TD
         D4 --> D1
     end
 
+    subgraph T5["task_buttons  •  priority 1"]
+        direction TB
+        E0[gpio_init GP20/21/22\npull-up] --> E1[vTaskDelay 50ms]
+        E1 --> E2{falling edge?}
+        E2 -- prev --> E3[CMD_PREV]
+        E2 -- next --> E4[CMD_NEXT]
+        E2 -- play btn --> E5{playing?}
+        E5 -- yes --> E6[CMD_STOP]
+        E5 -- no --> E7[CMD_PLAY]
+        E3 & E4 & E6 & E7 --> E1
+        E2 -- none --> E1
+    end
+
     A3 -- "cmd_queue\ncommand_t" --> B1
+    E3 & E4 & E6 & E7 -- "cmd_queue\ncommand_t" --> B1
     B4 -- "lcd_state\nvolatile struct" --> C1
 ```
 
@@ -149,6 +169,7 @@ flowchart TD
 | `task_dfplayer` | 1 | 512 words | ขับ DFPlayer, monitor BUSY pin, อัปเดต lcd_state |
 | `task_lcd` | 1 | 512 words | อ่าน lcd_state แล้วแสดงบน LCD ทุก 500ms |
 | `task_status_led` | 1 | 256 words | blink LED GP25 ทุก 250ms |
+| `task_buttons` | 1 | 256 words | poll GP20/21/22 ทุก 50ms, debounce, ส่ง Queue |
 
 ---
 
