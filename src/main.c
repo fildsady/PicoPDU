@@ -137,7 +137,7 @@ int main()
 
     xTaskCreate(dsp_task, "DSP_Task", 1024, NULL, 2, NULL);
 
-    vTaskStartScheduler();
+    vTaskStartScheduler(); 
 
     while(1){};
 }
