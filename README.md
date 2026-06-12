@@ -1,6 +1,7 @@
 # MP3 Control Project
 
-ระบบควบคุม DFPlayer Mini ผ่าน Serial command บน Raspberry Pi Pico 2 (RP2350) + FreeRTOS
+ระบบควบคุม DFPlayer Mini ผ่าน Serial command บน Raspberry Pi Pico 2 (RP2350) + FreeRTOS  
+แสดงสถานะผ่าน LCD 16x2 I2C และ LED blink
 
 ---
 
@@ -10,25 +11,44 @@
 |---------|------------|
 | MCU | Raspberry Pi Pico 2 (RP2350) |
 | MP3 Module | DFPlayer Mini |
-| การเชื่อมต่อ | UART0 — GP0 (TX) → DFPlayer RX, GP1 (RX) → DFPlayer TX, GP15 ← DFPlayer BUSY |
-| Interface | USB CDC (Serial Monitor) สำหรับรับคำสั่งจาก PC |
+| Display | LCD 16x2 I2C (PCF8574, address 0x27) |
+| Interface | USB CDC (Serial Monitor) รับคำสั่งจาก PC |
+
+### Wiring
 
 ```
-Pico 2
- GP0 (TX) ──────────────→ RX   DFPlayer Mini
- GP1 (RX) ←────────────── TX
- GP15 (IN) ←───────────── BUSY  (LOW = playing, HIGH = idle)
- GND      ─────────────── GND
- 3.3V/5V  ─────────────── VCC
-                           SPK+ → ลำโพง
-                           SPK- → ลำโพง
+Pico 2                          DFPlayer Mini
+ GP0  (TX)  ─────────────────→  RX
+ GP1  (RX)  ←─────────────────  TX
+ GP15 (IN)  ←─────────────────  BUSY  (LOW = playing, HIGH = idle)
+ GND        ─────────────────── GND
+ 3.3V/5V    ─────────────────── VCC
+                                 SPK+ → ลำโพง
+                                 SPK- → ลำโพง
+
+Pico 2                          LCD 16x2 I2C
+ GP2  (SDA) ─────────────────→  SDA
+ GP3  (SCL) ─────────────────→  SCL
+ GND        ─────────────────── GND
+ 3.3V/5V    ─────────────────── VCC
 ```
 
 ---
 
-## คำสั่งที่ใช้ได้ (Serial Commands)
+## Features
 
-พิมพ์คำสั่งแล้วกด Enter ผ่าน Serial Monitor (115200 baud, USB)
+- รับคำสั่ง text ผ่าน USB Serial — ไม่ต้องต่อปุ่มเพิ่ม
+- ควบคุม play / stop / next / prev / volume / repeat
+- แสดงสถานะ track และ volume บน LCD 16x2 แบบ real-time
+- BUSY pin monitor — แจ้งทาง Serial เมื่อเริ่มเล่นและจบ
+- Status LED blink GP25 บอกว่าบอร์ดยังทำงานอยู่
+- Repeat mode filter — ไม่ spam Serial ระหว่าง loop
+
+---
+
+## Serial Commands
+
+พิมพ์คำสั่งแล้วกด Enter ผ่าน Serial Monitor (baud ใดก็ได้, USB CDC)
 
 | คำสั่ง | ผลลัพธ์ |
 |--------|---------|
@@ -53,38 +73,49 @@ OK: volume set to 20
 OK: repeat all
 > stop
 OK: stopped
+> play 99
+ERR: track out of range (usage: play <1-99>)
 > xyz
 ERR: unknown command
 ```
 
 ---
 
+## LCD Display
+
+```
+┌────────────────┐
+│ Track: 1       │
+│ Vol:20 Playing │
+└────────────────┘
+```
+
+อัปเดตทุก 500ms แสดง track ปัจจุบัน, volume, และสถานะ Playing/Stopped
+
+---
+
 ## FreeRTOS Task Structure
 
 ```
-┌─────────────────┐     Queue (command_t)     ┌──────────────────┐
-│  task_uart_rx   │ ─────────────────────────→ │  task_dfplayer   │
-│  (priority 2)   │                            │  (priority 1)    │
-│                 │                            │                  │
-│ รับ char จาก    │                            │ ส่ง byte frame   │
-│ USB CDC         │                            │ ไป DFPlayer Mini │
-│ parse command   │                            │ via UART0        │
-└─────────────────┘                            └──────────────────┘
+┌─────────────────┐   Queue (command_t)   ┌──────────────────┐   lcd_state   ┌──────────────┐
+│  task_uart_rx   │ ────────────────────→ │  task_dfplayer   │ ────────────→ │  task_lcd    │
+│  (priority 2)   │                       │  (priority 1)    │               │  (priority 1)│
+│                 │                       │                  │               │              │
+│ รับ USB Serial  │                       │ ขับ DFPlayer     │               │ อัปเดต LCD  │
+│ parse command   │                       │ monitor BUSY pin │               │ ทุก 500ms    │
+└─────────────────┘                       └──────────────────┘               └──────────────┘
 
 ┌──────────────────┐
-│  task_status_led │
+│  task_status_led │  blink GP25 ทุก 250ms
 │  (priority 1)    │
-│                  │
-│ blink GP25 LED   │
-│ ทุก 250ms        │
-│ (บอร์ดยังทำงาน) │
 └──────────────────┘
 ```
 
 | Task | Priority | Stack | หน้าที่ |
 |------|----------|-------|---------|
 | `task_uart_rx` | 2 | 512 words | รับ command จาก USB, parse, ส่ง Queue |
-| `task_dfplayer` | 1 | 512 words | รับจาก Queue, ขับ DFPlayer ผ่าน UART0 |
+| `task_dfplayer` | 1 | 512 words | ขับ DFPlayer, monitor BUSY pin, อัปเดต lcd_state |
+| `task_lcd` | 1 | 512 words | อ่าน lcd_state แล้วแสดงบน LCD ทุก 500ms |
 | `task_status_led` | 1 | 256 words | blink LED GP25 ทุก 250ms |
 
 ---
@@ -95,12 +126,14 @@ ERR: unknown command
 MP3 Control Project/
 ├── inc/
 │   ├── FreeRTOSConfig.h     # ตั้งค่า FreeRTOS kernel
-│   └── dfplayer.h           # DFPlayer Mini API
+│   ├── dfplayer.h           # DFPlayer Mini API
+│   └── i2c_lcd.h            # LCD 16x2 I2C API
 ├── lib/
 │   └── FreeRTOS-Kernel/     # FreeRTOS submodule
 ├── src/
-│   ├── main.c               # Tasks, Queue, command parser
-│   └── dfplayer.c           # UART0 driver สำหรับ DFPlayer Mini
+│   ├── main.c               # Tasks, Queue, command parser, lcd_state
+│   ├── dfplayer.c           # UART0 driver สำหรับ DFPlayer Mini
+│   └── i2c_lcd.c            # I2C driver สำหรับ LCD 16x2 (PCF8574)
 ├── CMakeLists.txt
 └── pico_sdk_import.cmake
 ```
@@ -134,5 +167,5 @@ $project = "<path>\MP3 Control Project"
 | Branch | คำอธิบาย |
 |--------|----------|
 | `main` | พัฒนาหลัก |
-| `feature/dfplayer-uart-control-demo` | Demo DFPlayer Mini ผ่าน Serial command |
+| `feature/dfplayer-uart-control-demo` | Demo DFPlayer Mini + LCD |
 | `Blink_Test` | LED blink ทดสอบบอร์ด |
