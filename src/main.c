@@ -7,12 +7,11 @@
 #include "main_shared.h"
 #include "web_server.h"
 #include "hardware/gpio.h"
+#include "pico/cyw43_arch.h"
 #include <stdio.h>
 #include <string.h>
 
-#ifndef PICO_DEFAULT_LED_PIN
-#define PICO_DEFAULT_LED_PIN 25
-#endif
+volatile bool cyw43_ready = false;
 
 #define CMD_QUEUE_LEN   8   // max pending commands waiting to execute
 #define LINE_BUF_SIZE   64  // max length of one command line
@@ -122,16 +121,20 @@ static void task_lcd(void *pvParameters) {
     }
 }
 
-// Task: blink GP25 LED every 250ms — indicates board is alive
+// Task: blink LED every 250ms — indicates board is alive
+// On Pico W/2W: LED is on CYW43 chip (GP25 = CYW43 CS — never use gpio_init(25)!)
+// Must wait for cyw43_arch_init() in task_webserver before using CYW43 GPIO API
 static void task_status_led(void *pvParameters) {
     (void)pvParameters;
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+
+    // wait until task_webserver has called cyw43_arch_init()
+    while (!cyw43_ready)
+        vTaskDelay(pdMS_TO_TICKS(100));
 
     while (1) {
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
         vTaskDelay(pdMS_TO_TICKS(250));
-        gpio_put(PICO_DEFAULT_LED_PIN, 0);
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(250));
     }
 }

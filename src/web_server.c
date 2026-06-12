@@ -75,12 +75,13 @@ static u16_t ssi_handler(int index, char *insert, int insert_len) {
 void task_webserver(void *pvParameters) {
     (void)pvParameters;
 
-    // init CYW43 WiFi chip
+    // init CYW43 WiFi chip — must happen before anyone touches CYW43 GPIO/SPI pins
     if (cyw43_arch_init()) {
         printf("ERR: WiFi init failed\r\n");
         vTaskDelete(NULL);
         return;
     }
+    cyw43_ready = true;  // signal task_status_led it is safe to use CYW43 GPIO
 
     cyw43_arch_enable_sta_mode();
     printf("WiFi: connecting to %s ...\r\n", WIFI_SSID);

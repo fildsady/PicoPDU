@@ -18,3 +18,7 @@ typedef struct {
     bool      wifi_connected;
     char      ip[16];  // "xxx.xxx.xxx.xxx\0"
 } lcd_state_t;
+
+// set true by task_webserver after cyw43_arch_init() succeeds
+// read by task_status_led before using CYW43 LED API
+extern volatile bool cyw43_ready;
