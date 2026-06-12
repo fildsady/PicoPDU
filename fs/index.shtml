@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MP3 Controller</title>
+  <style>
+    body { font-family: sans-serif; max-width: 400px; margin: 40px auto; text-align: center; }
+    .status { background: #f0f0f0; padding: 16px; border-radius: 8px; margin: 16px 0; font-size: 1.2em; }
+    .btn-row { display: flex; gap: 8px; justify-content: center; margin: 8px 0; }
+    a.btn { display: inline-block; padding: 10px 20px; background: #333; color: #fff;
+            border-radius: 6px; text-decoration: none; }
+    a.btn:hover { background: #555; }
+    input[type=number] { width: 60px; padding: 8px; font-size: 1em; }
+  </style>
+</head>
+<body>
+  <h2>MP3 Controller</h2>
+
+  <div class="status">
+    Track: <!--#track--><br>
+    Volume: <!--#vol--><br>
+    Status: <!--#status-->
+  </div>
+
+  <div class="btn-row">
+    <a class="btn" href="/control?cmd=prev">&#9664;&#9664; Prev</a>
+    <a class="btn" href="/control?cmd=stop">&#9646;&#9646; Stop</a>
+    <a class="btn" href="/control?cmd=next">Next &#9654;&#9654;</a>
+  </div>
+
+  <form action="/control" method="get">
+    <input type="hidden" name="cmd" value="play">
+    Track: <input type="number" name="track" min="1" max="99" value="1">
+    <input type="submit" value="Play">
+  </form>
+
+  <form action="/control" method="get" style="margin-top:12px">
+    <input type="hidden" name="cmd" value="vol">
+    Volume: <input type="number" name="val" min="0" max="30" value="20">
+    <input type="submit" value="Set">
+  </form>
+
+  <div class="btn-row" style="margin-top:16px">
+    <a class="btn" href="/control?cmd=repeat_all">Repeat All</a>
+    <a class="btn" href="/control?cmd=repeat_one">Repeat One</a>
+    <a class="btn" href="/control?cmd=repeat_off">Repeat Off</a>
+  </div>
+
+  <p><small>auto-refresh every 2s</small></p>
+  <script>setTimeout(() => location.reload(), 2000);</script>
+</body>
+</html>

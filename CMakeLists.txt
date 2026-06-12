@@ -27,7 +27,7 @@ if (EXISTS ${picoVscode})
 endif()
 # ====================================================================================
 
-set(PICO_BOARD pico2 CACHE STRING "Board type")
+set(PICO_BOARD pico2_w CACHE STRING "Board type")
 # กำหนดบอร์ดที่ใช้เป็น 'pico2' (หากคุณใช้ Pico W หรือบอร์ดอื่น ควรปรับแก้ที่นี่)
 # CACHE STRING คือการบันทึกค่าไว้ใน CMake cache เพื่อใช้งานซ้ำ
 
@@ -58,6 +58,7 @@ add_executable(MP3_Control_Project
     src/main.c
     src/dfplayer.c
     src/i2c_lcd.c
+    src/web_server.c
 )
 # สร้าง Target ที่เป็นไฟล์ปฏิบัติการ (Executable) ชื่อเดียวกับชื่อโปรเจกต์
 # โดยใช้ไฟล์ต้นฉบับคือ main.c ในการคอมไพล์
@@ -79,6 +80,9 @@ target_link_libraries(MP3_Control_Project
         hardware_uart
         hardware_i2c
         FreeRTOS-Kernel-Heap4
+        # Pico W WiFi + lwIP
+        pico_cyw43_arch_lwip_threadsafe_background
+        pico_lwip_http
 )
 # เชื่อมโยง (Link) Libraries ที่ Target ต้องใช้ในการคอมไพล์และรัน:
 # - pico_stdlib: Libraries พื้นฐานของ Pico
