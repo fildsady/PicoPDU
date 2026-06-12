@@ -11,10 +11,11 @@
 #define PICO_DEFAULT_LED_PIN 25
 #endif
 
-#define CMD_QUEUE_LEN   8
-#define LINE_BUF_SIZE   64
-#define DEFAULT_VOLUME  25
+#define CMD_QUEUE_LEN   8   // max pending commands waiting to execute
+#define LINE_BUF_SIZE   64  // max length of one command line
+#define DEFAULT_VOLUME  25  // startup volume (0-30)
 
+// command types received from Serial
 typedef enum {
     CMD_PLAY,
     CMD_STOP,
@@ -27,13 +28,15 @@ typedef enum {
     CMD_UNKNOWN,
 } cmd_type_t;
 
+// passed through Queue from task_uart_rx → task_dfplayer
 typedef struct {
     cmd_type_t type;
-    int        arg;
+    int        arg;  // track number or volume depending on type
 } command_t;
 
 static QueueHandle_t cmd_queue;
 
+// parse text command into command_t and push to Queue
 static void parse_and_enqueue(const char *line) {
     command_t cmd = { .type = CMD_UNKNOWN, .arg = 0 };
     int n;
@@ -72,6 +75,7 @@ static void parse_and_enqueue(const char *line) {
     xQueueSend(cmd_queue, &cmd, 0);
 }
 
+// Task: blink GP25 LED every 250ms — indicates board is alive
 static void task_status_led(void *pvParameters) {
     (void)pvParameters;
     gpio_init(PICO_DEFAULT_LED_PIN);
@@ -85,13 +89,14 @@ static void task_status_led(void *pvParameters) {
     }
 }
 
+// Task: read chars from USB Serial, buffer until newline, then parse
 static void task_uart_rx(void *pvParameters) {
     (void)pvParameters;
     char buf[LINE_BUF_SIZE];
     int  idx = 0;
 
     while (1) {
-        int c = getchar_timeout_us(10000);
+        int c = getchar_timeout_us(10000); // poll every 10ms — avoids blocking scheduler
         if (c == PICO_ERROR_TIMEOUT) continue;
         if (c == '\r') continue;
 
@@ -110,13 +115,14 @@ static void task_uart_rx(void *pvParameters) {
     }
 }
 
+// Task: receive commands from Queue and drive DFPlayer Mini via UART0
 static void task_dfplayer(void *pvParameters) {
     (void)pvParameters;
     dfplayer_init();
     dfplayer_volume(DEFAULT_VOLUME);
     printf("OK: DFPlayer ready, volume %d\r\n", DEFAULT_VOLUME);
 
-    int current_track = 1;
+    int current_track = 1; // track number used by repeat one
     command_t cmd;
 
     while (1) {
@@ -167,10 +173,11 @@ int main(void) {
 
     cmd_queue = xQueueCreate(CMD_QUEUE_LEN, sizeof(command_t));
 
+    // create 3 tasks — scheduler manages priority
     xTaskCreate(task_status_led, "StatusLED", 256, NULL, 1, NULL);
     xTaskCreate(task_uart_rx,    "UART_RX",   512, NULL, 2, NULL);
     xTaskCreate(task_dfplayer,   "DFPlayer",  512, NULL, 1, NULL);
 
-    vTaskStartScheduler();
-    while (1) {} 
+    vTaskStartScheduler(); // start FreeRTOS — should never return
+    while (1) {}
 }
