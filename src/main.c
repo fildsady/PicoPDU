@@ -5,6 +5,7 @@
 #include "dfplayer.h"
 #include "i2c_lcd.h"
 #include "main_shared.h"
+#include "web_server.h"
 #include "hardware/gpio.h"
 #include <stdio.h>
 #include <string.h>
@@ -351,12 +352,13 @@ int main(void) {
 
     cmd_queue = xQueueCreate(CMD_QUEUE_LEN, sizeof(command_t));
 
-    // create 5 tasks — scheduler manages priority
+    // create 6 tasks — scheduler manages priority
     xTaskCreate(task_status_led, "StatusLED", 256,  NULL, 1, NULL);
     xTaskCreate(task_uart_rx,    "UART_RX",   512,  NULL, 2, NULL);
     xTaskCreate(task_dfplayer,   "DFPlayer",  512,  NULL, 1, NULL);
     xTaskCreate(task_lcd,        "LCD",       512,  NULL, 1, NULL);
     xTaskCreate(task_buttons,    "Buttons",   256,  NULL, 1, NULL);
+    xTaskCreate(task_webserver,  "WebServer", 1024, NULL, 3, NULL); // priority 3 — WiFi init needs to run early
 
     vTaskStartScheduler(); // start FreeRTOS — should never return
     while (1) {}
