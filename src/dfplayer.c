@@ -13,7 +13,7 @@ static void send_cmd(uint8_t cmd, uint16_t param) {
     uint8_t ph = (param >> 8) & 0xFF;
     uint8_t pl = param & 0xFF;
 
-    int16_t checksum = -(0xFF + 0x06 + cmd + 0x00 + ph + pl);
+    int16_t checksum = -(int16_t)(0xFF + 0x06 + (uint16_t)cmd + ph + pl);
 
     uint8_t frame[10] = {
         0x7E, 0xFF, 0x06, cmd, 0x00,
