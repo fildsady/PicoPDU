@@ -32,10 +32,10 @@ Pico 2                          LCD 16x2 I2C
  GND        ─────────────────── GND
  3.3V/5V    ─────────────────── VCC
 
-Pico 2                          Buttons (active LOW)
- GP20 (IN)  ────── BTN ── GND   Prev track
- GP21 (IN)  ────── BTN ── GND   Next track
- GP22 (IN)  ────── BTN ── GND   Toggle Play/Stop
+Pico 2                          Buttons (active LOW, internal pull-up)
+ GP20 (IN)  ────── BTN ── GND   Prev track / Vol down (Vol mode)
+ GP21 (IN)  ────── BTN ── GND   Next track / Vol up   (Vol mode)
+ GP22 (IN)  ────── BTN ── GND   Play/Stop  / Exit Vol mode
 ```
 
 ---
@@ -43,8 +43,8 @@ Pico 2                          Buttons (active LOW)
 ## Features
 
 - รับคำสั่ง text ผ่าน USB Serial — ควบคุมได้จาก PC
-- ปุ่มกดจริง GP20/GP21/GP22 — prev / next / toggle play/stop
-- ควบคุม play / stop / next / prev / volume / repeat
+- ปุ่มกดจริง GP20/GP21/GP22 — เลือก track, play/stop, ปรับ volume
+- ควบคุม play / stop / next / prev / volume / repeat ผ่าน Serial
 - แสดงสถานะ track และ volume บน LCD 16x2 แบบ real-time
 - BUSY pin monitor — แจ้งทาง Serial เมื่อเริ่มเล่นและจบ
 - Status LED blink GP25 บอกว่าบอร์ดยังทำงานอยู่
@@ -89,6 +89,7 @@ ERR: unknown command
 
 ## LCD Display
 
+**Track mode** (ปกติ)
 ```
 ┌────────────────┐
 │ Track: 1       │
@@ -96,7 +97,15 @@ ERR: unknown command
 └────────────────┘
 ```
 
-อัปเดตทุก 500ms แสดง track ปัจจุบัน, volume, และสถานะ Playing/Stopped
+**Vol mode** (hold GP20 หรือ GP21 ค้าง 2 วินาที)
+```
+┌────────────────┐
+│ [ Vol Mode ]   │
+│ < Vol: 20 >    │
+└────────────────┘
+```
+
+อัปเดตทุก 500ms
 
 ---
 
@@ -148,18 +157,23 @@ flowchart TD
     subgraph T5["task_buttons  •  priority 1"]
         direction TB
         E0[gpio_init GP20/21/22\npull-up] --> E1[vTaskDelay 50ms]
-        E1 --> E2{falling edge?}
-        E2 -- prev --> E3[CMD_PREV]
-        E2 -- next --> E4[CMD_NEXT]
-        E2 -- play btn --> E5{playing?}
-        E5 -- yes --> E6[CMD_STOP]
-        E5 -- no --> E7[CMD_PLAY]
-        E3 & E4 & E6 & E7 --> E1
-        E2 -- none --> E1
+        E1 --> E2{UI mode?}
+        E2 -- TRACK --> ET1{press / hold?}
+        ET1 -- GP20/21 short --> ET2[select track\nupdate lcd_state]
+        ET1 -- GP20/21 hold 2s --> ET3[switch to VOL mode]
+        ET1 -- GP22 --> ET4{playing?}
+        ET4 -- yes --> ET5[CMD_STOP]
+        ET4 -- no --> ET6[CMD_PLAY track]
+        ET2 & ET3 & ET5 & ET6 --> E1
+        E2 -- VOL --> EV1{button?}
+        EV1 -- GP20 --> EV2[CMD_VOLUME--]
+        EV1 -- GP21 --> EV3[CMD_VOLUME++]
+        EV1 -- GP22 --> EV4[switch to TRACK mode]
+        EV2 & EV3 & EV4 --> E1
     end
 
     A3 -- "cmd_queue\ncommand_t" --> B1
-    E3 & E4 & E6 & E7 -- "cmd_queue\ncommand_t" --> B1
+    ET5 & ET6 & EV2 & EV3 -- "cmd_queue\ncommand_t" --> B1
     B4 -- "lcd_state\nvolatile struct" --> C1
 ```
 
@@ -169,7 +183,7 @@ flowchart TD
 | `task_dfplayer` | 1 | 512 words | ขับ DFPlayer, monitor BUSY pin, อัปเดต lcd_state |
 | `task_lcd` | 1 | 512 words | อ่าน lcd_state แล้วแสดงบน LCD ทุก 500ms |
 | `task_status_led` | 1 | 256 words | blink LED GP25 ทุก 250ms |
-| `task_buttons` | 1 | 256 words | poll GP20/21/22 ทุก 50ms, debounce, ส่ง Queue |
+| `task_buttons` | 1 | 256 words | poll GP20/21/22 ทุก 50ms, TRACK/VOL mode, long-press 2s |
 
 ---
 
