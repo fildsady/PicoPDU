@@ -42,14 +42,17 @@ typedef struct {
 
 static QueueHandle_t cmd_queue;
 
-// shared LCD state — written by task_dfplayer, read by task_lcd
+typedef enum { UI_TRACK, UI_VOLUME } ui_mode_t;
+
+// shared LCD state — written by task_dfplayer / task_buttons, read by task_lcd
 typedef struct {
-    int  track;
-    int  volume;
-    bool playing;
+    int       track;
+    int       volume;
+    bool      playing;
+    ui_mode_t mode;
 } lcd_state_t;
 
-static volatile lcd_state_t lcd_state = { .track = 0, .volume = DEFAULT_VOLUME, .playing = false };
+static volatile lcd_state_t lcd_state = { .track = 0, .volume = DEFAULT_VOLUME, .playing = false, .mode = UI_TRACK };
 
 // parse text command into command_t and push to Queue
 static void parse_and_enqueue(const char *line) {
@@ -101,16 +104,20 @@ static void task_lcd(void *pvParameters) {
 
     while (1) {
         lcd_clear_buff_all();
-        if (lcd_state.track > 0)
-            lcd_buff_printf(0, 0, "Track: %d", lcd_state.track);
-        else
-            lcd_buff_printf(0, 0, "MP3 Controller");
+        if (lcd_state.mode == UI_VOLUME) {
+            lcd_buff_printf(0, 0, "[ Vol Mode ]");
+            lcd_buff_printf(1, 0, "< Vol: %d >", lcd_state.volume);
+        } else {
+            if (lcd_state.track > 0)
+                lcd_buff_printf(0, 0, "Track: %d", lcd_state.track);
+            else
+                lcd_buff_printf(0, 0, "MP3 Controller");
 
-        if (lcd_state.playing)
-            lcd_buff_printf(1, 0, "Vol:%d Playing", lcd_state.volume);
-        else
-            lcd_buff_printf(1, 0, "Vol:%d Stopped", lcd_state.volume);
-
+            if (lcd_state.playing)
+                lcd_buff_printf(1, 0, "Vol:%d Playing", lcd_state.volume);
+            else
+                lcd_buff_printf(1, 0, "Vol:%d Stopped", lcd_state.volume);
+        }
         put_buff_to_lcd();
         vTaskDelay(pdMS_TO_TICKS(500));
     }
@@ -230,10 +237,19 @@ static void task_dfplayer(void *pvParameters) {
     }
 }
 
-// Task: poll physical buttons every 50ms with falling-edge debounce
-// GP20 — select prev track (no play, wraps 1→MAX_TRACK)
-// GP21 — select next track (no play, wraps MAX_TRACK→1)
-// GP22 — if stopped: play selected track; if playing: stop
+// Task: poll physical buttons every 50ms
+//
+// TRACK mode (default):
+//   GP20 short → select prev track (wrap)   GP20 hold 2s → enter VOL mode
+//   GP21 short → select next track (wrap)   GP21 hold 2s → enter VOL mode
+//   GP22 → play selected track / stop
+//
+// VOL mode:
+//   GP20 → vol down (min 0)
+//   GP21 → vol up   (max 30)
+//   GP22 → exit VOL mode back to TRACK mode
+#define HOLD_TICKS  40  // 40 × 50ms = 2000ms
+
 static void task_buttons(void *pvParameters) {
     (void)pvParameters;
 
@@ -244,9 +260,11 @@ static void task_buttons(void *pvParameters) {
         gpio_pull_up(btn_pins[i]);
     }
 
-    bool last[3] = { true, true, true }; // released = HIGH
+    bool last[3]      = { true, true, true };
     bool cur[3];
-    int  selected_track = 1; // currently highlighted track (not necessarily playing)
+    int  hold[2]      = { 0, 0 }; // hold counters for GP20 and GP21
+    bool hold_fired[2]= { false, false }; // prevent repeat trigger while held
+    int  selected_track = 1;
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -256,26 +274,72 @@ static void task_buttons(void *pvParameters) {
 
         command_t cmd = { .type = CMD_UNKNOWN, .arg = 0 };
 
-        if (!cur[0] && last[0]) {           // GP20 — prev track
-            selected_track = (selected_track <= 1) ? MAX_TRACK : selected_track - 1;
-            lcd_state.track = selected_track; // update LCD immediately
-            printf("BTN: select track %d\r\n", selected_track);
-        }
-        if (!cur[1] && last[1]) {           // GP21 — next track
-            selected_track = (selected_track >= MAX_TRACK) ? 1 : selected_track + 1;
-            lcd_state.track = selected_track; // update LCD immediately
-            printf("BTN: select track %d\r\n", selected_track);
-        }
-        if (!cur[2] && last[2]) {           // GP22 — toggle play/stop
-            if (lcd_state.playing) {
-                cmd.type = CMD_STOP;
+        if (lcd_state.mode == UI_TRACK) {
+            // --- TRACK mode ---
+
+            // update hold counters for GP20/GP21
+            for (int i = 0; i < 2; i++) {
+                if (!cur[i]) {
+                    hold[i]++;
+                    if (hold[i] >= HOLD_TICKS && !hold_fired[i]) {
+                        hold_fired[i] = true;
+                        lcd_state.mode = UI_VOLUME;
+                        printf("BTN: enter vol mode\r\n");
+                    }
+                } else {
+                    hold[i] = 0;
+                    hold_fired[i] = false;
+                }
+            }
+
+            // short press only if not entering hold mode
+            if (!cur[0] && last[0] && hold[0] < HOLD_TICKS) { // GP20 — prev
+                selected_track = (selected_track <= 1) ? MAX_TRACK : selected_track - 1;
+                lcd_state.track = selected_track;
+                printf("BTN: select track %d\r\n", selected_track);
+            }
+            if (!cur[1] && last[1] && hold[1] < HOLD_TICKS) { // GP21 — next
+                selected_track = (selected_track >= MAX_TRACK) ? 1 : selected_track + 1;
+                lcd_state.track = selected_track;
+                printf("BTN: select track %d\r\n", selected_track);
+            }
+            if (!cur[2] && last[2]) {                          // GP22 — play/stop
+                if (lcd_state.playing) {
+                    cmd.type = CMD_STOP;
+                    xQueueSend(cmd_queue, &cmd, 0);
+                    printf("BTN: stop\r\n");
+                } else {
+                    cmd.type = CMD_PLAY;
+                    cmd.arg  = selected_track;
+                    xQueueSend(cmd_queue, &cmd, 0);
+                    printf("BTN: play track %d\r\n", selected_track);
+                }
+            }
+
+        } else {
+            // --- VOL mode ---
+            hold[0] = 0; hold[1] = 0;
+            hold_fired[0] = false; hold_fired[1] = false;
+
+            if (!cur[0] && last[0]) {   // GP20 — vol down
+                int v = lcd_state.volume > 0 ? lcd_state.volume - 1 : 0;
+                lcd_state.volume = v;
+                cmd.type = CMD_VOLUME;
+                cmd.arg  = v;
                 xQueueSend(cmd_queue, &cmd, 0);
-                printf("BTN: stop\r\n");
-            } else {
-                cmd.type = CMD_PLAY;
-                cmd.arg  = selected_track;
+                printf("BTN: vol %d\r\n", v);
+            }
+            if (!cur[1] && last[1]) {   // GP21 — vol up
+                int v = lcd_state.volume < 30 ? lcd_state.volume + 1 : 30;
+                lcd_state.volume = v;
+                cmd.type = CMD_VOLUME;
+                cmd.arg  = v;
                 xQueueSend(cmd_queue, &cmd, 0);
-                printf("BTN: play track %d\r\n", selected_track);
+                printf("BTN: vol %d\r\n", v);
+            }
+            if (!cur[2] && last[2]) {   // GP22 — exit vol mode
+                lcd_state.mode = UI_TRACK;
+                printf("BTN: exit vol mode\r\n");
             }
         }
 
