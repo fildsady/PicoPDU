@@ -18,9 +18,9 @@
 
 #define SAMPLE_RATE  10000
 #define BLOCK_SIZE   256
-#define FIR_TAPS     31
+#define FIR_TAPS     32   // multiple of 4 — required for Q15 DSP SIMD path
 
-// FIR coefficients (float) — firwin(31, 2000/5000)
+// FIR coefficients (float) — firwin(31, 2000/5000), zero-padded to 32
 static const float32_t fir_f32[FIR_TAPS] = {
     -0.00126f, -0.00198f, -0.00178f,  0.00000f,  0.00446f,
      0.00981f,  0.01475f,  0.01699f,  0.01462f,  0.00654f,
@@ -28,7 +28,7 @@ static const float32_t fir_f32[FIR_TAPS] = {
      0.94000f, -0.05668f, -0.05141f, -0.03858f, -0.02220f,
     -0.00629f,  0.00654f,  0.01462f,  0.01699f,  0.01475f,
      0.00981f,  0.00446f,  0.00000f, -0.00178f, -0.00198f,
-    -0.00126f,
+    -0.00126f,  0.00000f,  // zero-pad
 };
 
 // Q15 coefficients — แปลงจาก float (range -1.0 to +0.9999)
@@ -41,9 +41,9 @@ static float32_t out_f32[BLOCK_SIZE];
 static q15_t     in_q15[BLOCK_SIZE];
 static q15_t     out_q15[BLOCK_SIZE];
 
-// CMSIS-DSP state buffers
-static float32_t state_f32[FIR_TAPS + BLOCK_SIZE - 1];
-static q15_t     state_q15[FIR_TAPS + BLOCK_SIZE - 1];
+// CMSIS-DSP state buffers — ต้อง 4-byte aligned สำหรับ SIMD
+static float32_t state_f32[FIR_TAPS + BLOCK_SIZE - 1] __attribute__((aligned(4)));
+static q15_t     state_q15[FIR_TAPS + BLOCK_SIZE - 1] __attribute__((aligned(4)));
 
 // CMSIS-DSP instance structs
 static arm_fir_instance_f32 fir_inst_f32;
@@ -81,6 +81,30 @@ static float rms_q15(const q15_t *buf, int len) {
     return sqrtf(sum / len);
 }
 
+// HardFault handler — print PC, LR, CFSR จาก exception frame
+void HardFault_Handler(void) __attribute__((naked));
+void HardFault_Handler(void) {
+    __asm volatile(
+        "tst lr, #4        \n"
+        "ite eq            \n"
+        "mrseq r0, msp     \n"
+        "mrsne r0, psp     \n"
+        "b HardFault_dump  \n"
+    );
+}
+
+void HardFault_dump(uint32_t *frame) {
+    uint32_t pc  = frame[6];
+    uint32_t lr  = frame[5];
+    uint32_t cfsr = *(volatile uint32_t *)0xE000ED28;
+    printf("\n*** HARD FAULT ***\n");
+    printf("PC=0x%08lX  LR=0x%08lX\n", pc, lr);
+    printf("CFSR=0x%08lX\n", cfsr);
+    printf("  IBUSERR=%lu PRECISERR=%lu IMPRECISERR=%lu\n",
+           (cfsr>>8)&1, (cfsr>>9)&1, (cfsr>>10)&1);
+    while(1);
+}
+
 int main(void) {
     stdio_init_all();
     sleep_ms(2000);
@@ -97,22 +121,44 @@ int main(void) {
         fir_q15[i] = (q15_t)v;
     }
 
+#define DBG(msg) do { printf(msg "\n"); sleep_ms(50); } while(0)
+
+    // test simple CMSIS-DSP function ก่อน
+    DBG("test arm_scale_f32...");
+    arm_scale_f32(in_f32, 1.0f, out_f32, BLOCK_SIZE);
+    DBG("arm_scale_f32 OK");
+
+    float32_t maxval; uint32_t maxidx;
+    arm_max_f32(in_f32, BLOCK_SIZE, &maxval, &maxidx);
+    printf("arm_max_f32 OK: max=%.4f\n", (double)maxval);
+    sleep_ms(50);
+
     // init CMSIS-DSP instances
+    DBG("init f32...");
     arm_fir_init_f32(&fir_inst_f32, FIR_TAPS, fir_f32, state_f32, BLOCK_SIZE);
+    DBG("init q15...");
     arm_fir_init_q15(&fir_inst_q15, FIR_TAPS, fir_q15, state_q15, BLOCK_SIZE);
 
     // warm up
+    DBG("gen signal...");
     gen_signal_f32(in_f32, BLOCK_SIZE);
+    DBG("float_to_q15...");
     arm_float_to_q15(in_f32, in_q15, BLOCK_SIZE);
+    DBG("fir_f32...");
     arm_fir_f32(&fir_inst_f32, in_f32, out_f32, BLOCK_SIZE);
+    DBG("fir_q15...");
     arm_fir_q15(&fir_inst_q15, in_q15, out_q15, BLOCK_SIZE);
+    DBG("warm up done");
 
     const int ITER = 1000;
+
+    // pre-generate ก่อน benchmark เพื่อไม่ให้ sinf distort ผลวัด
+    gen_signal_f32(in_f32, BLOCK_SIZE);
+    arm_float_to_q15(in_f32, in_q15, BLOCK_SIZE);
 
     // ---- Benchmark A: float (FPU / VMLA) ----
     uint64_t t0 = time_us_64();
     for (int i = 0; i < ITER; i++) {
-        gen_signal_f32(in_f32, BLOCK_SIZE);
         arm_fir_f32(&fir_inst_f32, in_f32, out_f32, BLOCK_SIZE);
     }
     uint64_t t1 = time_us_64();
@@ -121,8 +167,6 @@ int main(void) {
     // ---- Benchmark B: Q15 (DSP SIMD / SMLAD) ----
     uint64_t t2 = time_us_64();
     for (int i = 0; i < ITER; i++) {
-        gen_signal_f32(in_f32, BLOCK_SIZE);
-        arm_float_to_q15(in_f32, in_q15, BLOCK_SIZE);
         arm_fir_q15(&fir_inst_q15, in_q15, out_q15, BLOCK_SIZE);
     }
     uint64_t t3 = time_us_64();
