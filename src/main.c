@@ -43,8 +43,11 @@ static void get_time_str(char *buf9) {
 #define CH_GPIO_BASE 4  // GP4-GP11
 
 // ---- Sensor placeholders — swap with real driver later ----
-static volatile float s_temp = 25.3f;   // °C
-static volatile float s_hum  = 62.0f;   // %RH
+static volatile float s_temp    = 25.3f;   // °C
+static volatile float s_hum     = 62.0f;   // %RH
+static volatile float s_voltage = 220.0f;  // V  (PZEM)
+static volatile float s_current = 0.0f;    // A  (PZEM)
+static volatile float s_power   = 0.0f;    // W  (PZEM)
 
 // ---- task handle for notification from IRQ ----
 static TaskHandle_t s_wifi_task_handle = NULL;
@@ -325,6 +328,60 @@ static void wifi_task(void *params) {
     }
     vTaskDelay(pdMS_TO_TICKS(100));
 
+    // HA Discovery — voltage
+    {
+        char pl[320];
+        snprintf(pl, sizeof(pl),
+            "{\"name\":\"PDU Voltage\","
+            "\"stat_t\":\"pdu/sensor/voltage\","
+            "\"unit_of_meas\":\"V\","
+            "\"dev_cla\":\"voltage\","
+            "\"stat_cla\":\"measurement\","
+            "\"uniq_id\":\"pdu2_voltage\","
+            "\"avty_t\":\"pdu/status\","
+            "\"pl_avail\":\"online\",\"pl_not_avail\":\"offline\","
+            "\"device\":{\"ids\":[\"pdu2\"],"
+            "\"name\":\"PicoPDU\",\"model\":\"Pico 2W\",\"manufacturer\":\"RPi\"}}");
+        mqtt_pub(mqtt, "homeassistant/sensor/picopdu_voltage/config", pl, 1);
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // HA Discovery — current
+    {
+        char pl[320];
+        snprintf(pl, sizeof(pl),
+            "{\"name\":\"PDU Current\","
+            "\"stat_t\":\"pdu/sensor/current\","
+            "\"unit_of_meas\":\"A\","
+            "\"dev_cla\":\"current\","
+            "\"stat_cla\":\"measurement\","
+            "\"uniq_id\":\"pdu2_current\","
+            "\"avty_t\":\"pdu/status\","
+            "\"pl_avail\":\"online\",\"pl_not_avail\":\"offline\","
+            "\"device\":{\"ids\":[\"pdu2\"],"
+            "\"name\":\"PicoPDU\",\"model\":\"Pico 2W\",\"manufacturer\":\"RPi\"}}");
+        mqtt_pub(mqtt, "homeassistant/sensor/picopdu_current/config", pl, 1);
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // HA Discovery — power
+    {
+        char pl[320];
+        snprintf(pl, sizeof(pl),
+            "{\"name\":\"PDU Power\","
+            "\"stat_t\":\"pdu/sensor/power\","
+            "\"unit_of_meas\":\"W\","
+            "\"dev_cla\":\"power\","
+            "\"stat_cla\":\"measurement\","
+            "\"uniq_id\":\"pdu2_power\","
+            "\"avty_t\":\"pdu/status\","
+            "\"pl_avail\":\"online\",\"pl_not_avail\":\"offline\","
+            "\"device\":{\"ids\":[\"pdu2\"],"
+            "\"name\":\"PicoPDU\",\"model\":\"Pico 2W\",\"manufacturer\":\"RPi\"}}");
+        mqtt_pub(mqtt, "homeassistant/sensor/picopdu_power/config", pl, 1);
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+
     // publish ค่าเริ่มต้นของ sensor
     {
         char buf[16];
@@ -333,6 +390,15 @@ static void wifi_task(void *params) {
         vTaskDelay(pdMS_TO_TICKS(50));
         snprintf(buf, sizeof(buf), "%.1f", (double)s_hum);
         mqtt_pub(mqtt, "pdu/sensor/hum", buf, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        snprintf(buf, sizeof(buf), "%.1f", (double)s_voltage);
+        mqtt_pub(mqtt, "pdu/sensor/voltage", buf, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        snprintf(buf, sizeof(buf), "%.2f", (double)s_current);
+        mqtt_pub(mqtt, "pdu/sensor/current", buf, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        snprintf(buf, sizeof(buf), "%.1f", (double)s_power);
+        mqtt_pub(mqtt, "pdu/sensor/power", buf, 1);
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 
@@ -379,6 +445,12 @@ static void wifi_task(void *params) {
             mqtt_pub(mqtt, "pdu/sensor/temp", buf, 1);
             snprintf(buf, sizeof(buf), "%.1f", (double)s_hum);
             mqtt_pub(mqtt, "pdu/sensor/hum",  buf, 1);
+            snprintf(buf, sizeof(buf), "%.1f", (double)s_voltage);
+            mqtt_pub(mqtt, "pdu/sensor/voltage", buf, 1);
+            snprintf(buf, sizeof(buf), "%.2f", (double)s_current);
+            mqtt_pub(mqtt, "pdu/sensor/current", buf, 1);
+            snprintf(buf, sizeof(buf), "%.1f", (double)s_power);
+            mqtt_pub(mqtt, "pdu/sensor/power",   buf, 1);
         }
 
         // heartbeat LED ทุก ~1s
