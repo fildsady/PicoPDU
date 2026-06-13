@@ -47,6 +47,7 @@ ninja
 PicoPDU/
 ├── src/
 │   └── main.c               # LED blink template (starting point)
+├── inc/                     # header files และ library เพิ่มเติม
 ├── lib/
 │   └── FreeRTOS-Kernel/     # submodule — พร้อมใช้เมื่อต้องการ RTOS
 ├── CMakeLists.txt
