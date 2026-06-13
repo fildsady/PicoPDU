@@ -34,20 +34,25 @@ static const float32_t fir_f32[FIR_TAPS] = {
 // Q15 coefficients — แปลงจาก float (range -1.0 to +0.9999)
 // Q15 = float * 32768, clamp to [-32768, 32767]
 static q15_t fir_q15[FIR_TAPS];
+static q31_t fir_q31[FIR_TAPS];
 
 // buffers
 static float32_t in_f32[BLOCK_SIZE];
 static float32_t out_f32[BLOCK_SIZE];
 static q15_t     in_q15[BLOCK_SIZE];
 static q15_t     out_q15[BLOCK_SIZE];
+static q31_t     in_q31[BLOCK_SIZE];
+static q31_t     out_q31[BLOCK_SIZE];
 
 // CMSIS-DSP state buffers — ต้อง 4-byte aligned สำหรับ SIMD
 static float32_t state_f32[FIR_TAPS + BLOCK_SIZE - 1] __attribute__((aligned(4)));
 static q15_t     state_q15[FIR_TAPS + BLOCK_SIZE - 1] __attribute__((aligned(4)));
+static q31_t     state_q31[FIR_TAPS + BLOCK_SIZE - 1] __attribute__((aligned(4)));
 
 // CMSIS-DSP instance structs
 static arm_fir_instance_f32 fir_inst_f32;
 static arm_fir_instance_q15 fir_inst_q15;
+static arm_fir_instance_q31 fir_inst_q31;
 
 // ---------------------------------------------------------------------------
 // สร้าง signal: sine 1kHz + 0.5 * sine 5kHz
@@ -113,12 +118,17 @@ int main(void) {
     printf("FIR LPF 31-tap, Fs=10kHz, cutoff=2kHz\n");
     printf("Signal: 1kHz (passband) + 5kHz (stopband)\n\n");
 
-    // แปลง float coeffs → Q15
+    // แปลง float coeffs → Q15 และ Q31
     for (int i = 0; i < FIR_TAPS; i++) {
-        float v = fir_f32[i] * 32768.0f;
-        if (v >  32767.0f) v =  32767.0f;
-        if (v < -32768.0f) v = -32768.0f;
-        fir_q15[i] = (q15_t)v;
+        float v15 = fir_f32[i] * 32768.0f;
+        if (v15 >  32767.0f) v15 =  32767.0f;
+        if (v15 < -32768.0f) v15 = -32768.0f;
+        fir_q15[i] = (q15_t)v15;
+
+        float v31 = fir_f32[i] * 2147483648.0f;
+        if (v31 >  2147483647.0f) v31 =  2147483647.0f;
+        if (v31 < -2147483648.0f) v31 = -2147483648.0f;
+        fir_q31[i] = (q31_t)v31;
     }
 
 #define DBG(msg) do { printf(msg "\n"); sleep_ms(50); } while(0)
@@ -138,6 +148,8 @@ int main(void) {
     arm_fir_init_f32(&fir_inst_f32, FIR_TAPS, fir_f32, state_f32, BLOCK_SIZE);
     DBG("init q15...");
     arm_fir_init_q15(&fir_inst_q15, FIR_TAPS, fir_q15, state_q15, BLOCK_SIZE);
+    DBG("init q31...");
+    arm_fir_init_q31(&fir_inst_q31, FIR_TAPS, fir_q31, state_q31, BLOCK_SIZE);
 
     // warm up
     DBG("gen signal...");
@@ -148,6 +160,9 @@ int main(void) {
     arm_fir_f32(&fir_inst_f32, in_f32, out_f32, BLOCK_SIZE);
     DBG("fir_q15...");
     arm_fir_q15(&fir_inst_q15, in_q15, out_q15, BLOCK_SIZE);
+    arm_float_to_q31(in_f32, in_q31, BLOCK_SIZE);
+    DBG("fir_q31...");
+    arm_fir_q31(&fir_inst_q31, in_q31, out_q31, BLOCK_SIZE);
     DBG("warm up done");
 
     const int ITER = 1000;
@@ -155,8 +170,9 @@ int main(void) {
     // pre-generate ก่อน benchmark เพื่อไม่ให้ sinf distort ผลวัด
     gen_signal_f32(in_f32, BLOCK_SIZE);
     arm_float_to_q15(in_f32, in_q15, BLOCK_SIZE);
+    arm_float_to_q31(in_f32, in_q31, BLOCK_SIZE);
 
-    // ---- Benchmark A: float (FPU / VMLA) ----
+    // ---- Benchmark A: float32 (FPU / VMLA) ----
     uint64_t t0 = time_us_64();
     for (int i = 0; i < ITER; i++) {
         arm_fir_f32(&fir_inst_f32, in_f32, out_f32, BLOCK_SIZE);
@@ -172,24 +188,42 @@ int main(void) {
     uint64_t t3 = time_us_64();
     float us_q15 = (float)(t3 - t2) / ITER;
 
+    // ---- Benchmark C: Q31 (32-bit int / SMLAL) ----
+    uint64_t t4 = time_us_64();
+    for (int i = 0; i < ITER; i++) {
+        arm_fir_q31(&fir_inst_q31, in_q31, out_q31, BLOCK_SIZE);
+    }
+    uint64_t t5 = time_us_64();
+    float us_q31 = (float)(t5 - t4) / ITER;
+
     printf("--- Benchmark (%d iter x %d samples) ---\n", ITER, BLOCK_SIZE);
     printf("[A] arm_fir_f32 (FPU/VMLA)  : %7.2f us/block  %5.3f us/sample\n",
            (double)us_f32, (double)(us_f32 / BLOCK_SIZE));
     printf("[B] arm_fir_q15 (DSP/SMLAD) : %7.2f us/block  %5.3f us/sample\n",
            (double)us_q15, (double)(us_q15 / BLOCK_SIZE));
-    printf("Speedup Q15 vs f32: %.2fx\n\n",
-           (double)(us_f32 / us_q15));
+    printf("[C] arm_fir_q31 (int32/SMLAL): %7.2f us/block  %5.3f us/sample\n",
+           (double)us_q31, (double)(us_q31 / BLOCK_SIZE));
+    printf("Speedup Q15 vs f32: %.2fx\n",   (double)(us_f32 / us_q15));
+    printf("Speedup Q31 vs f32: %.2fx\n\n", (double)(us_f32 / us_q31));
 
     // ---- Signal quality ----
     gen_signal_f32(in_f32, BLOCK_SIZE);
     arm_float_to_q15(in_f32, in_q15, BLOCK_SIZE);
+    arm_float_to_q31(in_f32, in_q31, BLOCK_SIZE);
     float rms_in = rms_f32(in_f32, BLOCK_SIZE);
 
     arm_fir_f32(&fir_inst_f32, in_f32, out_f32, BLOCK_SIZE);
     arm_fir_q15(&fir_inst_q15, in_q15, out_q15, BLOCK_SIZE);
+    arm_fir_q31(&fir_inst_q31, in_q31, out_q31, BLOCK_SIZE);
 
     float rms_out_f32 = rms_f32(out_f32, BLOCK_SIZE);
     float rms_out_q15 = rms_q15(out_q15, BLOCK_SIZE);
+    float rms_out_q31 = 0.0f;
+    for (int i = 0; i < BLOCK_SIZE; i++) {
+        float v = (float)out_q31[i] / 2147483648.0f;
+        rms_out_q31 += v * v;
+    }
+    rms_out_q31 = sqrtf(rms_out_q31 / BLOCK_SIZE);
 
     printf("--- Signal Attenuation ---\n");
     printf("RMS input        : %.4f\n", (double)rms_in);
@@ -199,6 +233,9 @@ int main(void) {
     printf("[B] Q15 output   : %.4f  (%+.1f dB)\n",
            (double)rms_out_q15,
            (double)(20.0f * log10f(rms_out_q15 / rms_in)));
+    printf("[C] Q31 output   : %.4f  (%+.1f dB)\n",
+           (double)rms_out_q31,
+           (double)(20.0f * log10f(rms_out_q31 / rms_in)));
 
     printf("\nDone.\n");
 
