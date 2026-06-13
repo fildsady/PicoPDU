@@ -15,68 +15,14 @@
 extern volatile bool     ch_state[NUM_CH];
 extern volatile time_t   s_epoch;
 extern volatile uint32_t s_sync_tick;
+extern volatile float    s_temp;
+extern volatile float    s_hum;
 
-// ---- Static HTML + JavaScript ----
-static const char s_html[] =
-"<!DOCTYPE html>\n"
-"<html><head>"
-"<meta charset=\"utf-8\">"
-"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-"<title>PicoPDU</title>"
-"<style>"
-"*{box-sizing:border-box}"
-"body{font-family:monospace;background:#1a1a2e;color:#eee;"
-     "max-width:460px;margin:0 auto;padding:16px}"
-"h2{color:#0af;margin:0 0 4px}"
-"#clk{font-size:20px;color:#8af;margin:0 0 12px}"
-"table{width:100%;border-collapse:collapse}"
-"th,td{border:1px solid #333;padding:8px;text-align:center}"
-"th{background:#222;color:#aaa}"
-".on{background:#0d5c1e;color:#4f8;font-weight:bold}"
-".off{background:#5c1010;color:#f88}"
-"button{padding:4px 16px;background:#0af;color:#000;"
-        "border:none;border-radius:3px;cursor:pointer;"
-        "font-family:monospace;font-size:13px}"
-"button:active{opacity:.7}"
-"#dot{display:inline-block;width:8px;height:8px;"
-      "border-radius:50%;background:#0f0;margin-left:6px}"
-"</style></head><body>"
-"<h2>&#x26A1; PicoPDU <span id=\"dot\"></span></h2>"
-"<p id=\"clk\">--:--:--</p>"
-"<table id=\"tbl\">"
-"<tr><th>CH</th><th>State</th><th>Action</th></tr>"
-"</table>"
-"<script>"
-"let ok=false;"
-"async function load(){"
-"  try{"
-"    const d=await(await fetch('/api/state')).json();"
-"    document.getElementById('clk').textContent=d.t;"
-"    let h='<tr><th>CH</th><th>State</th><th>Action</th></tr>';"
-"    for(let i=0;i<8;i++){"
-"      const on=d.ch[i];"
-"      h+='<tr><th>'+(i+1)+'</th>'"
-"        +'<td class=\"'+(on?'on':'off')+'\">'+(on?'ON':'OFF')+'</td>'"
-"        +'<td><button onclick=\"tog('+(i+1)+')\">Toggle</button></td></tr>';"
-"    }"
-"    document.getElementById('tbl').innerHTML=h;"
-"    document.getElementById('dot').style.background='#0f0';"
-"  }catch(e){"
-"    document.getElementById('dot').style.background='#f40';"
-"  }"
-"}"
-"async function tog(n){"
-"  document.getElementById('dot').style.background='#fa0';"
-"  await fetch('/cgi/toggle?ch='+n);"
-"  load();"
-"}"
-"load();"
-"setInterval(load,1000);"
-"</script>"
-"</body></html>\n";
+// generated from src/web/index.html at build time
+#include "index_html.h"
 
 // ---- JSON state buffer ----
-static char s_json[96];
+static char s_json[128];
 
 static int build_json(void) {
     char tbuf[9];
@@ -89,8 +35,8 @@ static int build_json(void) {
         snprintf(tbuf, sizeof(tbuf), "%02d:%02d:%02d", t.tm_hour, t.tm_min, t.tm_sec);
     }
     return snprintf(s_json, sizeof(s_json),
-        "{\"t\":\"%s\",\"ch\":[%d,%d,%d,%d,%d,%d,%d,%d]}",
-        tbuf,
+        "{\"t\":\"%s\",\"temp\":%.1f,\"hum\":%.1f,\"ch\":[%d,%d,%d,%d,%d,%d,%d,%d]}",
+        tbuf, (double)s_temp, (double)s_hum,
         ch_state[0]?1:0, ch_state[1]?1:0,
         ch_state[2]?1:0, ch_state[3]?1:0,
         ch_state[4]?1:0, ch_state[5]?1:0,

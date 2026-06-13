@@ -37,7 +37,11 @@ static void get_time_str(char *buf9) {
 #define NUM_CH       8
 #define CH_GPIO_BASE 4
 
-volatile bool ch_state[NUM_CH] = {false};
+volatile bool  ch_state[NUM_CH] = {false};
+
+// ---- Sensor placeholders — replace with real sensor driver later ----
+volatile float s_temp = 25.3f;   // °C
+volatile float s_hum  = 62.0f;   // %RH
 
 // ---- LCD ----
 static void update_lcd(void) {
@@ -47,8 +51,10 @@ static void update_lcd(void) {
     for (int i = 0; i < NUM_CH; i++)
         ch[i] = ch_state[i] ? '1' : '0';
     lcd_clear_buff_all();
-    lcd_buff_printf(0, 0, "%s", timebuf);
-    lcd_buff_printf(1, 0, "CH:%s", ch);
+    // line 0: "17:02:09  25.3C"  (16 chars)
+    lcd_buff_printf(0, 0, "%s %5.1fC", timebuf, (double)s_temp);
+    // line 1: "CH:00000000 62% "  (16 chars)
+    lcd_buff_printf(1, 0, "CH:%s %3.0f%%", ch, (double)s_hum);
     put_buff_to_lcd();
 }
 

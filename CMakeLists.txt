@@ -31,7 +31,20 @@ project(PicoPDU C CXX ASM)
 
 pico_sdk_init()
 
+# Convert index.html -> index_html.h at build time
+set(HTML_SRC  ${CMAKE_CURRENT_SOURCE_DIR}/src/web/index.html)
+set(HTML_HDR  ${CMAKE_CURRENT_BINARY_DIR}/index_html.h)
+add_custom_command(
+    OUTPUT  ${HTML_HDR}
+    COMMAND "$ENV{USERPROFILE}/.pico-sdk/python/3.13.7/python.exe"
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/html2c.py ${HTML_SRC} ${HTML_HDR}
+    DEPENDS ${HTML_SRC}
+    COMMENT "Generating index_html.h from index.html"
+)
+add_custom_target(gen_html DEPENDS ${HTML_HDR})
+
 add_executable(PicoPDU src/main.c src/i2c_lcd.c src/http_server.c)
+add_dependencies(PicoPDU gen_html)
 
 pico_set_program_name(PicoPDU "PicoPDU")
 pico_set_program_version(PicoPDU "0.1")
@@ -52,6 +65,7 @@ target_link_libraries(PicoPDU
 target_include_directories(PicoPDU PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/inc
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_options(${PROJECT_NAME} PRIVATE

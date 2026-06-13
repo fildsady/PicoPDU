@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>PicoPDU</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #0f1117; color: #cdd6f4;
+  height: 100vh; display: flex; flex-direction: column;
+}
+
+/* top bar */
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 24px;
+  background: #1e1e2e; border-bottom: 1px solid #313244;
+}
+.topbar h1 { font-size: 18px; font-weight: 600; color: #89b4fa; letter-spacing: .5px; }
+.topbar .sub { font-size: 13px; color: #585b70; margin-left: auto; }
+#dot { width: 9px; height: 9px; border-radius: 50%; background: #a6e3a1; flex-shrink: 0; }
+
+/* main area */
+.main { flex: 1; padding: 24px 32px; overflow: auto; }
+
+/* sensor bar */
+.sensors { display: flex; gap: 12px; max-width: 900px; margin-bottom: 16px; }
+.scard {
+  background: #1e1e2e; border: 1px solid #313244; border-radius: 8px;
+  padding: 12px 20px; display: flex; align-items: center; gap: 14px; min-width: 180px;
+}
+.scard .ico { font-size: 24px; line-height: 1; }
+.slabel { font-size: 11px; color: #585b70; text-transform: uppercase; letter-spacing: .8px; }
+.sval { font-size: 24px; font-weight: 700; color: #cdd6f4; font-variant-numeric: tabular-nums; }
+
+/* channel grid */
+.grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 14px; max-width: 900px;
+}
+.card {
+  background: #1e1e2e; border: 1px solid #313244; border-radius: 8px;
+  padding: 16px 20px; display: flex; flex-direction: column; gap: 10px;
+}
+.card .label { font-size: 12px; color: #585b70; text-transform: uppercase; letter-spacing: .8px; }
+.card .chnum { font-size: 22px; font-weight: 700; color: #89b4fa; }
+.badge {
+  display: inline-block; padding: 4px 14px; border-radius: 4px;
+  font-size: 13px; font-weight: 600; letter-spacing: .5px; width: fit-content;
+}
+.badge.on  { background: #1c3829; color: #a6e3a1; border: 1px solid #2a5c3f; }
+.badge.off { background: #2e1f1f; color: #f38ba8; border: 1px solid #5c2828; }
+.card button {
+  margin-top: auto; padding: 7px 0; width: 100%;
+  background: #313244; color: #cdd6f4;
+  border: 1px solid #45475a; border-radius: 5px;
+  font-size: 13px; cursor: pointer; transition: background .15s;
+}
+.card button:hover   { background: #45475a; }
+.card button:active  { background: #585b70; }
+.card.is-on { border-color: #2a5c3f; }
+
+/* footer */
+.footer {
+  padding: 8px 24px; background: #1e1e2e; border-top: 1px solid #313244;
+  font-size: 11px; color: #45475a;
+}
+</style>
+</head><body>
+
+<div class="topbar">
+  <span id="dot"></span>
+  <h1>&#x26A1; PicoPDU</h1>
+  <span class="sub">Pico 2W &bull; UTC+7</span>
+</div>
+
+<div class="main">
+  <div class="sensors">
+    <div class="scard">
+      <span class="ico">&#x1F321;&#xFE0F;</span>
+      <div>
+        <div class="slabel">Temperature</div>
+        <div class="sval" id="sTemp">-- &deg;C</div>
+      </div>
+    </div>
+    <div class="scard">
+      <span class="ico">&#x1F4A7;</span>
+      <div>
+        <div class="slabel">Humidity</div>
+        <div class="sval" id="sHum">-- %</div>
+      </div>
+    </div>
+  </div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<div class="footer">Auto-refresh every 1s</div>
+
+<script>
+let st = null;   /* null = ยังไม่เคย render → force render ครั้งแรกเสมอ */
+let busy = false;
+
+function render() {
+  let h = '';
+  for (let i = 0; i < 8; i++) {
+    const on = st[i];
+    h += '<div class="card' + (on ? ' is-on' : '') + '">'
+       + '<span class="label">Channel</span>'
+       + '<span class="chnum">' + (i + 1) + '</span>'
+       + '<span class="badge ' + (on ? 'on' : 'off') + '">' + (on ? 'ON' : 'OFF') + '</span>'
+       + '<button data-ch="' + (i + 1) + '">' + (on ? 'Turn OFF' : 'Turn ON') + '</button>'
+       + '</div>';
+  }
+  document.getElementById('grid').innerHTML = h;
+}
+
+function applyData(d) {
+  const changed = !st || d.ch.some((v, i) => v !== st[i]);
+  st = d.ch;
+  if (changed) render();   /* render เฉพาะตอน state เปลี่ยน — ปุ่มไม่ถูก destroy ระหว่าง poll */
+  document.getElementById('sTemp').innerHTML = d.temp.toFixed(1) + ' &deg;C';
+  document.getElementById('sHum').textContent = d.hum.toFixed(0) + ' %';
+  document.getElementById('dot').style.background = '#a6e3a1';
+}
+
+/* load() ข้าม request ถ้า toggle กำลังทำงาน — ป้องกัน concurrent fetch บน Pico */
+async function load() {
+  if (busy) return;
+  try {
+    applyData(await (await fetch('/api/state')).json());
+  } catch(e) {
+    document.getElementById('dot').style.background = '#f38ba8';
+  }
+}
+
+async function tog(n) {
+  if (busy) return;
+  busy = true;
+  /* optimistic flip ทันที */
+  st[n - 1] ^= 1;
+  render();
+  document.getElementById('dot').style.background = '#f9e2af';
+  try {
+    /* ตาม 302 redirect ไป /api/state บน connection เดิม → ได้ state ยืนยันกลับมาในครั้งเดียว */
+    applyData(await (await fetch('/cgi/toggle?ch=' + n)).json());
+  } catch(e) {
+    /* revert ถ้า request fail */
+    st[n - 1] ^= 1;
+    render();
+    document.getElementById('dot').style.background = '#f38ba8';
+  }
+  busy = false;
+}
+
+document.getElementById('grid').addEventListener('click', function(e) {
+  const btn = e.target.closest('button[data-ch]');
+  if (btn) tog(parseInt(btn.dataset.ch));
+});
+
+load();
+setInterval(load, 1000);
+</script>
+</body></html>
