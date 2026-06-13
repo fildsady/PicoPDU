@@ -58,6 +58,19 @@ static const char s_html[] =
 "</p>"
 "</body></html>\r\n";
 
+// ---- Custom filesystem hook ----
+// fs_open เรียก fs_open_custom ก่อน — return 1 = handled, 0 = fallback to fsdata
+int fs_open_custom(struct fs_file *file, const char *name) {
+    (void)name;  // เสิร์ฟ s_html ให้ทุก URL
+    memset(file, 0, sizeof(*file));
+    file->data  = s_html;
+    file->len   = sizeof(s_html) - 1;
+    file->index = sizeof(s_html) - 1;
+    file->flags = 0;
+    return 1;
+}
+void fs_close_custom(struct fs_file *file) { (void)file; }
+
 // ---- SSI ----
 // tags ต้องเรียงตามตัวอักษร (httpd ใช้ binary search)
 static const char *ssi_tags[] = {

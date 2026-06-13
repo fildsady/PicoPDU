@@ -50,6 +50,7 @@
 #define LWIP_HTTPD_SSI_INCLUDE_TAG      0
 #define LWIP_HTTPD_MAX_TAG_INSERT_LEN   96
 #define LWIP_HTTPD_DYNAMIC_HEADERS      1
+#define LWIP_HTTPD_CUSTOM_FILES         1
 
 #define LWIP_DEBUG                  0
 #define LWIP_STATS                  0
