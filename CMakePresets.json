@@ -12,6 +12,18 @@
                 "CMAKE_TOOLCHAIN_FILE": "",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}"
             }
+        },
+        {
+            "name": "pico2w-release",
+            "displayName": "Pico 2W Release",
+            "description": "Build for Pico 2W (RP2350) with pico-sdk bundled Python",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "PICO_BOARD": "pico2_w",
+                "Python3_EXECUTABLE": "$env{USERPROFILE}/.pico-sdk/python/3.13.7/python.exe"
+            }
         }
     ]
 }

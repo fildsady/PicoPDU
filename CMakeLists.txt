@@ -34,8 +34,8 @@ set(PICO_BOARD pico2_w CACHE STRING "Board type")
 # นำเข้า Pico SDK
 include(pico_sdk_import.cmake)
 
-project(MP3_Control_Project C CXX ASM)
-# กำหนดชื่อโปรเจกต์เป็น MP3_Control_Project
+project(PicoPDU C CXX ASM)
+# กำหนดชื่อโปรเจกต์เป็น PicoPDU
 # และระบุภาษาที่ใช้ในโปรเจกต์ (C, CXX, ASM)
 
 # Initialise the Raspberry Pi Pico SDK
@@ -43,7 +43,7 @@ pico_sdk_init()
 # เรียกใช้ฟังก์ชันจาก Pico SDK เพื่อเริ่มต้นการตั้งค่าสภาพแวดล้อมที่จำเป็นทั้งหมด
 
 # Add executable. Default name is the project name, version 0.1
-add_executable(MP3_Control_Project
+add_executable(PicoPDU
     src/main.c
     src/dfplayer.c
     src/i2c_lcd.c
@@ -52,19 +52,19 @@ add_executable(MP3_Control_Project
 # สร้าง Target ที่เป็นไฟล์ปฏิบัติการ (Executable) ชื่อเดียวกับชื่อโปรเจกต์
 # โดยใช้ไฟล์ต้นฉบับคือ main.c ในการคอมไพล์
 
-pico_set_program_name(MP3_Control_Project "MP3_Control_Project")
+pico_set_program_name(PicoPDU "PicoPDU")
 # กำหนดชื่อสุดท้ายของโปรแกรมที่คอมไพล์เสร็จ (เช่น ชื่อไฟล์ .elf หรือ .uf2)
-pico_set_program_version(MP3_Control_Project "0.1")
+pico_set_program_version(PicoPDU "0.1")
 # กำหนดเวอร์ชันของโปรแกรม
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(MP3_Control_Project 0)
+pico_enable_stdio_uart(PicoPDU 0)
 # ปิดใช้งาน Standard I/O (stdio) ผ่าน UART (Serial Port) (ค่า 0)
-pico_enable_stdio_usb(MP3_Control_Project 1)
+pico_enable_stdio_usb(PicoPDU 1)
 # เปิดใช้งาน Standard I/O (stdio) ผ่าน USB (ค่า 1) ซึ่งจำเป็นสำหรับฟังก์ชัน printf ใน Pico
 
 # Add the standard library to the build
-target_link_libraries(MP3_Control_Project
+target_link_libraries(PicoPDU
         pico_stdlib
         hardware_uart
         hardware_i2c
@@ -80,7 +80,7 @@ target_link_libraries(MP3_Control_Project
 # - FreeRTOS-Kernel-Heap4: Libraries หลักของ FreeRTOS Kernel พร้อมวิธีการจัดสรรหน่วยความจำแบบ Heap4
 
 # Add the standard include files to the build
-target_include_directories(MP3_Control_Project PRIVATE
+target_include_directories(PicoPDU PRIVATE
  ${CMAKE_CURRENT_LIST_DIR}
  ${CMAKE_CURRENT_SOURCE_DIR}/inc
 )
@@ -93,5 +93,5 @@ target_link_options(${PROJECT_NAME} PRIVATE
     -Wl,--print-memory-usage
     -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.map
 )
-pico_add_extra_outputs(MP3_Control_Project)
+pico_add_extra_outputs(PicoPDU)
 # สั่งให้ Pico SDK สร้างไฟล์เอาต์พุตเพิ่มเติม (เช่น .uf2 สำหรับอัปโหลด)
