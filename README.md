@@ -32,7 +32,8 @@ flowchart TB
     BTNS(["Buttons GP20/21/22"])
     SER(["USB Serial CDC"])
 
-    BR    <-->|HTTP|       HTTPD
+    BR    -->|request|     HTTPD
+    HTTPD -->|response|    BR
     HTTPD -->|CGI cmd|     FIFO
     HTTPD -.->|SSI read|   STATE
     FIFO  -->|fifo_poll|   CMDQ
