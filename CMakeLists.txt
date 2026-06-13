@@ -36,12 +36,10 @@ pico_set_program_version(PicoPDU "0.1")
 pico_enable_stdio_uart(PicoPDU 0)
 pico_enable_stdio_usb(PicoPDU 1)
 
-target_link_libraries(PicoPDU pico_stdlib)
+target_link_libraries(PicoPDU pico_stdlib m)
 
-# Pico 2W ต้องการ CYW43 driver เพื่อควบคุม LED ผ่าน WiFi chip
-if(PICO_CYW43_SUPPORTED)
-    target_link_libraries(PicoPDU pico_cyw43_arch_none)
-endif()
+# pico-sdk ตั้ง -march=armv8-m.main+fp+dsp ไว้แล้ว — DSP/FPU enable โดย default
+target_compile_options(PicoPDU PRIVATE -O2)
 
 target_include_directories(PicoPDU PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
