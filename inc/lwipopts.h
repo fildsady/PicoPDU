@@ -37,6 +37,12 @@
 #define DHCP_DOES_ARP_CHECK         0
 #define LWIP_DHCP_DOES_ACD_CHECK    0
 
+// SNTP
+#define LWIP_SNTP                       1
+#define SNTP_SERVER_DNS                 1
+#define SNTP_UPDATE_DELAY               300000
+#define SNTP_SET_SYSTEM_TIME(t)         do { extern void sntp_time_received(u32_t); sntp_time_received(t); } while(0)
+
 // MQTT buffers
 #define MQTT_OUTPUT_RINGBUF_SIZE    8192
 #define MQTT_VAR_HEADER_BUFFER_LEN  512

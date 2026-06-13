@@ -19,10 +19,13 @@ if (EXISTS ${picoVscode})
 endif()
 # ====================================================================================
 
-# เปลี่ยนตามบอร์ดที่ใช้: pico2 หรือ pico2_w
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
+set(PICO_PLATFORM rp2350-arm-s)
 
 include(pico_sdk_import.cmake)
+
+set(FREERTOS_KERNEL_PATH "$ENV{USERPROFILE}/FreeRTOS-Kernel" CACHE PATH "FreeRTOS Kernel path")
+include(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
 
 project(PicoPDU C CXX ASM)
 
@@ -33,25 +36,27 @@ add_executable(PicoPDU src/main.c src/i2c_lcd.c)
 pico_set_program_name(PicoPDU "PicoPDU")
 pico_set_program_version(PicoPDU "0.1")
 
-pico_enable_stdio_uart(PicoPDU 0)
-pico_enable_stdio_usb(PicoPDU 1)
+pico_enable_stdio_uart(PicoPDU 1)
+pico_enable_stdio_usb(PicoPDU 0)
 
 target_link_libraries(PicoPDU
     pico_stdlib
-    pico_cyw43_arch_lwip_poll
-    pico_lwip_mqtt
     hardware_i2c
-)
-
-target_include_directories(PicoPDU PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/inc
+    pico_cyw43_arch_lwip_threadsafe_background
+    pico_lwip_mqtt
+    pico_lwip_sntp
+    FreeRTOS-Kernel-Heap4
 )
 
 target_compile_definitions(PicoPDU PRIVATE
     MQTT_OUTPUT_RINGBUF_SIZE=8192
     MQTT_VAR_HEADER_BUFFER_LEN=512
     MQTT_REQ_MAX_IN_FLIGHT=20
+)
+
+target_include_directories(PicoPDU PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/inc
 )
 
 target_link_options(${PROJECT_NAME} PRIVATE
