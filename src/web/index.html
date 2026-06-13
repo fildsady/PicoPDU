@@ -19,6 +19,25 @@ body {
 .topbar h1 { font-size: 18px; font-weight: 600; color: #89b4fa; letter-spacing: .5px; }
 .topbar .sub { font-size: 13px; color: #585b70; margin-left: auto; }
 #dot { width: 9px; height: 9px; border-radius: 50%; background: #a6e3a1; flex-shrink: 0; }
+/* login */
+#loginBar { display: flex; align-items: center; gap: 8px; }
+#loginBar input {
+  padding: 5px 10px; background: #313244; color: #cdd6f4;
+  border: 1px solid #45475a; border-radius: 4px; font-size: 13px; width: 140px;
+}
+#loginBar button {
+  padding: 5px 14px; background: #89b4fa; color: #1e1e2e;
+  border: none; border-radius: 4px; font-size: 13px; cursor: pointer; font-weight: 600;
+}
+#loginBar button:hover { background: #b4d0fa; }
+#loginErr { font-size: 12px; color: #f38ba8; }
+#loggedAs { font-size: 12px; color: #a6e3a1; display: flex; align-items: center; gap: 8px; }
+#logoutBtn {
+  padding: 4px 10px; background: transparent; color: #585b70;
+  border: 1px solid #45475a; border-radius: 4px; font-size: 12px; cursor: pointer;
+}
+#logoutBtn:hover { color: #f38ba8; border-color: #f38ba8; }
+.locked { opacity: .35; pointer-events: none; }
 
 /* main area */
 .main { flex: 1; padding: 24px 32px; overflow: auto; }
@@ -72,6 +91,16 @@ body {
   <span id="dot"></span>
   <h1>&#x26A1; PicoPDU</h1>
   <span class="sub">Pico 2W &bull; UTC+7</span>
+  <div id="loginBar">
+    <input type="password" id="passInput" placeholder="Password" maxlength="32"
+           onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">Login</button>
+    <span id="loginErr"></span>
+  </div>
+  <span id="loggedAs" style="display:none">
+    &#x1F513; Logged in
+    <button id="logoutBtn" onclick="doLogout()">Logout</button>
+  </span>
 </div>
 
 <div class="main">
@@ -97,9 +126,52 @@ body {
 <div class="footer">Auto-refresh every 1s</div>
 
 <script>
-let st = null;   /* null = ยังไม่เคย render → force render ครั้งแรกเสมอ */
-let busy = false;
+const SESSION_MS = 2 * 3600 * 1000;   /* 2 ชั่วโมง */
 
+let st   = null;
+let busy = false;
+let tok  = '';
+
+/* ---- auth helpers ---- */
+function setLoggedIn(newTok) {
+  tok = newTok;
+  localStorage.setItem('tok',     tok);
+  localStorage.setItem('tok_exp', Date.now() + SESSION_MS);
+  document.getElementById('loginBar').style.display  = 'none';
+  document.getElementById('loggedAs').style.display  = '';
+  document.getElementById('grid').classList.remove('locked');
+}
+
+function setLoggedOut() {
+  tok = '';
+  localStorage.removeItem('tok');
+  localStorage.removeItem('tok_exp');
+  document.getElementById('loginBar').style.display  = '';
+  document.getElementById('loggedAs').style.display  = 'none';
+  document.getElementById('grid').classList.add('locked');
+  document.getElementById('passInput').value = '';
+  document.getElementById('loginErr').textContent    = '';
+}
+
+async function doLogin() {
+  const pass = document.getElementById('passInput').value;
+  if (!pass) return;
+  document.getElementById('loginErr').textContent = '';
+  try {
+    const d = await (await fetch('/cgi/login?pass=' + encodeURIComponent(pass))).json();
+    if (d.ok) { setLoggedIn(d.tok); }
+    else      { document.getElementById('loginErr').textContent = 'Wrong password'; }
+  } catch(e) {
+    document.getElementById('loginErr').textContent = 'Error';
+  }
+}
+
+async function doLogout() {
+  await fetch('/cgi/logout').catch(() => {});
+  setLoggedOut();
+}
+
+/* ---- state ---- */
 function render() {
   let h = '';
   for (let i = 0; i < 8; i++) {
@@ -117,15 +189,19 @@ function render() {
 function applyData(d) {
   const changed = !st || d.ch.some((v, i) => v !== st[i]);
   st = d.ch;
-  if (changed) render();   /* render เฉพาะตอน state เปลี่ยน — ปุ่มไม่ถูก destroy ระหว่าง poll */
+  if (changed) render();
   document.getElementById('sTemp').innerHTML = d.temp.toFixed(1) + ' &deg;C';
   document.getElementById('sHum').textContent = d.hum.toFixed(0) + ' %';
   document.getElementById('dot').style.background = '#a6e3a1';
 }
 
-/* load() ข้าม request ถ้า toggle กำลังทำงาน — ป้องกัน concurrent fetch บน Pico */
 async function load() {
   if (busy) return;
+  /* ตรวจ session หมดอายุ */
+  if (tok && Date.now() > parseInt(localStorage.getItem('tok_exp') || '0')) {
+    setLoggedOut();
+    return;
+  }
   try {
     applyData(await (await fetch('/api/state')).json());
   } catch(e) {
@@ -134,17 +210,14 @@ async function load() {
 }
 
 async function tog(n) {
-  if (busy) return;
+  if (busy || !tok) return;
   busy = true;
-  /* optimistic flip ทันที */
   st[n - 1] ^= 1;
   render();
   document.getElementById('dot').style.background = '#f9e2af';
   try {
-    /* ตาม 302 redirect ไป /api/state บน connection เดิม → ได้ state ยืนยันกลับมาในครั้งเดียว */
-    applyData(await (await fetch('/cgi/toggle?ch=' + n)).json());
+    applyData(await (await fetch('/cgi/toggle?tok=' + tok + '&ch=' + n)).json());
   } catch(e) {
-    /* revert ถ้า request fail */
     st[n - 1] ^= 1;
     render();
     document.getElementById('dot').style.background = '#f38ba8';
@@ -157,7 +230,27 @@ document.getElementById('grid').addEventListener('click', function(e) {
   if (btn) tog(parseInt(btn.dataset.ch));
 });
 
-load();
-setInterval(load, 1000);
+/* ---- init: ตรวจ localStorage token ---- */
+async function init() {
+  document.getElementById('grid').classList.add('locked');
+  const saved    = localStorage.getItem('tok');
+  const savedExp = parseInt(localStorage.getItem('tok_exp') || '0');
+
+  if (saved && Date.now() < savedExp) {
+    /* ยังไม่หมดอายุ — verify กับ server ว่า token ยังใช้ได้ (Pico อาจ reboot) */
+    try {
+      const d = await (await fetch('/cgi/verify?tok=' + saved)).json();
+      if (d.ok) { setLoggedIn(saved); }
+      else      { setLoggedOut(); }
+    } catch(e) { setLoggedOut(); }
+  } else {
+    setLoggedOut();
+  }
+
+  load();
+  setInterval(load, 1000);
+}
+
+init();
 </script>
 </body></html>
