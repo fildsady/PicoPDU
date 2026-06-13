@@ -34,6 +34,22 @@ set(PICO_BOARD pico2_w CACHE STRING "Board type")
 # นำเข้า Pico SDK
 include(pico_sdk_import.cmake)
 
+# ---------------------------------------------------------------------------
+# FreeRTOS (optional — uncomment block below to switch from bare-metal to RTOS)
+#
+# Current mode: bare-metal multicore (Core 0 = app, Core 1 = CYW43/lwIP poll)
+#
+# To enable FreeRTOS + lwIP:
+#   Option A) FreeRTOS-SMP + pico_cyw43_arch_lwip_sys_freertos
+#             (lwIP runs inside a FreeRTOS task, requires NO_SYS=0 in lwipopts.h)
+#   Option B) Keep bare-metal lwIP on Core 1, run FreeRTOS only on Core 0
+#             (needs careful multicore + scheduler init order)
+#   Option C) Replace lwIP with another TCP/IP stack (e.g. Altair, uIP)
+#
+# set(FREERTOS_KERNEL_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/FreeRTOS-Kernel)
+# include(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2350_ARM_NTZ/freertos_kernel_import.cmake)
+# ---------------------------------------------------------------------------
+
 project(PicoPDU C CXX ASM)
 # กำหนดชื่อโปรเจกต์เป็น PicoPDU
 # และระบุภาษาที่ใช้ในโปรเจกต์ (C, CXX, ASM)
@@ -69,9 +85,13 @@ target_link_libraries(PicoPDU
         hardware_uart
         hardware_i2c
         pico_multicore
-        # Pico W WiFi + lwIP (bare-metal poll mode — Core 1 owns CYW43)
-        pico_cyw43_arch_lwip_poll
+        # --- bare-metal poll mode (current) ---
+        pico_cyw43_arch_lwip_poll   # NO_SYS=1, Core 1 owns CYW43
         pico_lwip_http
+        # --- FreeRTOS + lwIP SYS mode (uncomment when ready) ---
+        # FreeRTOS-Kernel-Heap4
+        # pico_cyw43_arch_lwip_sys_freertos   # NO_SYS=0, lwIP task inside RTOS
+        # pico_lwip_http
 )
 # เชื่อมโยง (Link) Libraries ที่ Target ต้องใช้ในการคอมไพล์และรัน:
 # - pico_stdlib: Libraries พื้นฐานของ Pico
