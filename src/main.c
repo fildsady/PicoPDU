@@ -42,6 +42,10 @@ static void get_time_str(char *buf9) {
 #define NUM_CH      8
 #define CH_GPIO_BASE 4  // GP4-GP11
 
+// ---- Sensor placeholders — swap with real driver later ----
+static volatile float s_temp = 25.3f;   // °C
+static volatile float s_hum  = 62.0f;   // %RH
+
 // ---- task handle for notification from IRQ ----
 static TaskHandle_t s_wifi_task_handle = NULL;
 
@@ -119,8 +123,10 @@ static void update_lcd(void) {
     for (int i = 0; i < NUM_CH; i++)
         ch[i] = ch_state[i] ? '1' : '0';
     lcd_clear_buff_all();
-    lcd_buff_printf(0, 0, "%s", timebuf);   // "HH:MM:SS"
-    lcd_buff_printf(1, 0, "CH:%s", ch);     // "CH:00000000"
+    // "17:02:09  25.3C"  (16 chars)
+    lcd_buff_printf(0, 0, "%s %5.1fC", timebuf, (double)s_temp);
+    // "CH:00000000 62% "  (16 chars)
+    lcd_buff_printf(1, 0, "CH:%s %3.0f%%", ch, (double)s_hum);
     put_buff_to_lcd();
 }
 
@@ -259,7 +265,7 @@ static void wifi_task(void *params) {
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 
-    // HA Discovery
+    // HA Discovery — switches
     lcd_clear_buff_all();
     lcd_buff_printf(0, 0, "HA Discovery...");
     put_buff_to_lcd();
@@ -272,22 +278,70 @@ static void wifi_task(void *params) {
                  "{\"name\":\"PDU Ch%d\","
                  "\"cmd_t\":\"pdu/ch%d/set\","
                  "\"stat_t\":\"pdu/ch%d/state\","
-                 "\"uniq_id\":\"picopdu_ch%d\","
+                 "\"uniq_id\":\"pdu2_ch%d\","
                  "\"avty_t\":\"pdu/status\","
                  "\"pl_avail\":\"online\","
                  "\"pl_not_avail\":\"offline\","
-                 "\"device\":{\"ids\":[\"picopdu\"],"
-                 "\"name\":\"PicoPDU\",\"mdl\":\"Pico 2W\",\"mfr\":\"RPi\"}}",
+                 "\"device\":{\"ids\":[\"pdu2\"],"
+                 "\"name\":\"PicoPDU\",\"model\":\"Pico 2W\",\"manufacturer\":\"RPi\"}}",
                  i+1, i+1, i+1, i+1);
         mqtt_pub(mqtt, config_topic, payload, 1);
         vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    // HA Discovery — temperature sensor
+    {
+        char pl[320];
+        snprintf(pl, sizeof(pl),
+            "{\"name\":\"PDU Temperature\","
+            "\"stat_t\":\"pdu/sensor/temp\","
+            "\"unit_of_meas\":\"\xc2\xb0""C\","
+            "\"dev_cla\":\"temperature\","
+            "\"stat_cla\":\"measurement\","
+            "\"uniq_id\":\"pdu2_temp\","
+            "\"avty_t\":\"pdu/status\","
+            "\"pl_avail\":\"online\",\"pl_not_avail\":\"offline\","
+            "\"device\":{\"ids\":[\"pdu2\"],"
+            "\"name\":\"PicoPDU\",\"model\":\"Pico 2W\",\"manufacturer\":\"RPi\"}}");
+        mqtt_pub(mqtt, "homeassistant/sensor/picopdu_temp/config", pl, 1);
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // HA Discovery — humidity sensor
+    {
+        char pl[320];
+        snprintf(pl, sizeof(pl),
+            "{\"name\":\"PDU Humidity\","
+            "\"stat_t\":\"pdu/sensor/hum\","
+            "\"unit_of_meas\":\"%%\","
+            "\"dev_cla\":\"humidity\","
+            "\"stat_cla\":\"measurement\","
+            "\"uniq_id\":\"pdu2_hum\","
+            "\"avty_t\":\"pdu/status\","
+            "\"pl_avail\":\"online\",\"pl_not_avail\":\"offline\","
+            "\"device\":{\"ids\":[\"pdu2\"],"
+            "\"name\":\"PicoPDU\",\"model\":\"Pico 2W\",\"manufacturer\":\"RPi\"}}");
+        mqtt_pub(mqtt, "homeassistant/sensor/picopdu_hum/config", pl, 1);
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // publish ค่าเริ่มต้นของ sensor
+    {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.1f", (double)s_temp);
+        mqtt_pub(mqtt, "pdu/sensor/temp", buf, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        snprintf(buf, sizeof(buf), "%.1f", (double)s_hum);
+        mqtt_pub(mqtt, "pdu/sensor/hum", buf, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 
     update_lcd();
     s_wifi_task_handle = xTaskGetCurrentTaskHandle();
 
     // main loop
-    TickType_t last_blink = xTaskGetTickCount();
+    TickType_t last_blink  = xTaskGetTickCount();
+    TickType_t last_sensor = xTaskGetTickCount();
     int last_sec = -1;
     while (true) {
         // poll ทุก 200ms หรือปลุกทันทีเมื่อมี MQTT command
@@ -316,8 +370,18 @@ static void wifi_task(void *params) {
             update_lcd();
         }
 
-        // heartbeat LED ทุก ~1s
+        // publish sensor ทุก 60 วิ
         TickType_t now_tick = xTaskGetTickCount();
+        if (now_tick - last_sensor >= pdMS_TO_TICKS(60000)) {
+            last_sensor = now_tick;
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f", (double)s_temp);
+            mqtt_pub(mqtt, "pdu/sensor/temp", buf, 1);
+            snprintf(buf, sizeof(buf), "%.1f", (double)s_hum);
+            mqtt_pub(mqtt, "pdu/sensor/hum",  buf, 1);
+        }
+
+        // heartbeat LED ทุก ~1s
         if (now_tick - last_blink >= pdMS_TO_TICKS(1000)) {
             last_blink = now_tick;
             cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
