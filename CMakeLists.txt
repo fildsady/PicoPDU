@@ -31,7 +31,7 @@ project(PicoPDU C CXX ASM)
 
 pico_sdk_init()
 
-add_executable(PicoPDU src/main.c src/i2c_lcd.c)
+add_executable(PicoPDU src/main.c src/i2c_lcd.c src/http_server.c)
 
 pico_set_program_name(PicoPDU "PicoPDU")
 pico_set_program_version(PicoPDU "0.1")
@@ -43,16 +43,11 @@ target_link_libraries(PicoPDU
     pico_stdlib
     hardware_i2c
     pico_cyw43_arch_lwip_threadsafe_background
-    pico_lwip_mqtt
+    pico_lwip_http
     pico_lwip_sntp
     FreeRTOS-Kernel-Heap4
 )
 
-target_compile_definitions(PicoPDU PRIVATE
-    MQTT_OUTPUT_RINGBUF_SIZE=8192
-    MQTT_VAR_HEADER_BUFFER_LEN=512
-    MQTT_REQ_MAX_IN_FLIGHT=20
-)
 
 target_include_directories(PicoPDU PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}

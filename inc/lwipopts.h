@@ -43,9 +43,13 @@
 #define SNTP_UPDATE_DELAY               300000
 #define SNTP_SET_SYSTEM_TIME(t)         do { extern void sntp_time_received(u32_t); sntp_time_received(t); } while(0)
 
-// MQTT buffers
-#define MQTT_OUTPUT_RINGBUF_SIZE    8192
-#define MQTT_VAR_HEADER_BUFFER_LEN  512
+// HTTP server
+#define LWIP_HTTPD                      1
+#define LWIP_HTTPD_SSI                  1
+#define LWIP_HTTPD_CGI                  1
+#define LWIP_HTTPD_SSI_INCLUDE_TAG      0
+#define LWIP_HTTPD_MAX_TAG_INSERT_LEN   96
+#define LWIP_HTTPD_DYNAMIC_HEADERS      1
 
 #define LWIP_DEBUG                  0
 #define LWIP_STATS                  0
