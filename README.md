@@ -1,103 +1,202 @@
 # MP3 Control Project
 
-ระบบควบคุม DFPlayer Mini ผ่าน Serial command บน Raspberry Pi Pico 2 (RP2350) + FreeRTOS  
-แสดงสถานะผ่าน LCD 16x2 I2C และ LED blink
+ระบบควบคุม DFPlayer Mini บน **Raspberry Pi Pico 2W (RP2350)**
+สถาปัตยกรรม **bare-metal dual-core** — ไม่ใช้ RTOS
+
+- **Core 0** — main loop: LCD, ปุ่ม, DFPlayer, UART
+- **Core 1** — CYW43 WiFi poll + lwIP HTTP server
+- **Web UI** real-time AJAX ควบคุมได้จากมือถือ / PC
+
+---
+
+## System Architecture
+
+```mermaid
+block-beta
+  columns 3
+
+  block:core0["⚙️ Core 0  (bare-metal loop)"]:2
+    columns 2
+    uart["UART RX\nparse command"]
+    btn["Buttons\nGP20 / 21 / 22"]
+    dfp["DFPlayer driver\nUART0"]
+    lcd["LCD update\n16×2 I2C"]
+    fifo_r["FIFO bridge\n← Core 1"]
+    state["lcd_state\n(volatile)"]
+  end
+
+  block:core1["📡 Core 1  (CYW43 poll loop)"]:1
+    columns 1
+    wifi["CYW43 WiFi\ncyw43_arch_poll()"]
+    http["lwIP httpd\nCGI + SSI"]
+    fifo_w["multicore_fifo\n_push_blocking()"]
+  end
+
+  space:2
+  fifo_hw["HW FIFO\n8 entries"]
+  space
+
+  dfp_hw(["DFPlayer Mini\nSPK"])
+  lcd_hw(["LCD 16×2\nPCF8574"])
+  browser(["Browser\nAJAX 300 ms"])
+
+  dfp --> dfp_hw
+  lcd --> lcd_hw
+  fifo_r --> fifo_hw
+  fifo_w --> fifo_hw
+  http <--> browser
+```
+
+---
+
+## Core 0 — Main Loop
+
+```mermaid
+flowchart TD
+    BOOT([Boot]) --> INIT["lcd_init\ndfplayer_init\nbuttons_init"]
+    INIT --> LAUNCH["multicore_launch_core1\n→ core1_wifi_entry"]
+    LAUNCH --> LOOP
+
+    subgraph LOOP["∞ Main Loop  (sleep_ms 1)"]
+        direction TB
+        U[uart_rx_poll] --> F[fifo_poll\nHW FIFO → ring buf]
+        F --> B{btn timer\n50 ms?}
+        B -- yes --> BP[buttons_poll]
+        B -- no  --> D
+        BP --> D[dfplayer_run\ndrain ring buf]
+        D --> L{lcd timer\n500 ms?}
+        L -- yes --> LD[lcd_update\ntrack · vol · status\nrepeat mode]
+        L -- no  --> U
+        LD --> U
+    end
+
+    subgraph BP_DETAIL["buttons_poll — TRACK mode"]
+        direction LR
+        P20s["GP20 short\n→ prev track"] 
+        P21s["GP21 short\n→ next track"]
+        P22["GP22\n→ play / stop"]
+        HOLD["GP20/21 hold 2s\n→ VOL mode"]
+    end
+
+    subgraph VOL_MODE["buttons_poll — VOL mode"]
+        direction LR
+        V20["GP20 → vol −"]
+        V21["GP21 → vol +"]
+        V22["GP22 → TRACK mode"]
+    end
+```
+
+---
+
+## Web Request Flow
+
+```mermaid
+sequenceDiagram
+    participant BR as Browser
+    participant C1 as Core 1 (lwIP)
+    participant FIFO as HW FIFO
+    participant C0 as Core 0
+    participant DF as DFPlayer
+
+    loop AJAX poll 300 ms
+        BR->>C1: GET /status.shtml
+        C1-->>BR: JSON {track, vol, status, repeat}
+    end
+
+    BR->>C1: GET /control?cmd=play&track=3
+    C1->>C1: CGI handler\ncgi_control()
+    C1->>FIFO: multicore_fifo_push\n(CMD_PLAY<<16 | 3)
+    FIFO->>C0: fifo_poll() dequeue
+    C0->>C0: cmd_enqueue(CMD_PLAY, 3)
+    C0->>DF: dfplayer_play(3)\nUART0 frame
+    C0->>C0: lcd_state.track = 3\nlcd_state.playing = true
+    BR->>C1: GET /status.shtml
+    C1-->>BR: JSON {track:3, status:"Playing"}
+```
 
 ---
 
 ## Hardware
 
-| อุปกรณ์ | รายละเอียด |
-|---------|------------|
-| MCU | Raspberry Pi Pico 2 (RP2350) |
-| MP3 Module | DFPlayer Mini |
-| Display | LCD 16x2 I2C (PCF8574, address 0x27) |
-| Interface | USB CDC (Serial Monitor) รับคำสั่งจาก PC |
-
 ### Wiring
 
 ```
-Pico 2                          DFPlayer Mini
- GP0  (TX)  ─────────────────→  RX
- GP1  (RX)  ←─────────────────  TX
- GP15 (IN)  ←─────────────────  BUSY  (LOW = playing, HIGH = idle)
- GND        ─────────────────── GND
- 3.3V/5V    ─────────────────── VCC
-                                 SPK+ → ลำโพง
-                                 SPK- → ลำโพง
+Pico 2W                         DFPlayer Mini
+ GP0  (UART0 TX) ─────────────→  RX
+ GP1  (UART0 RX) ←─────────────  TX
+ GP15 (IN)       ←─────────────  BUSY  (LOW=playing)
+ GND             ────────────── GND
+ VSYS            ────────────── VCC (5V)
+                                  SPK+ → ลำโพง
+                                  SPK- → ลำโพง
 
-Pico 2                          LCD 16x2 I2C
- GP2  (SDA) ─────────────────→  SDA
- GP3  (SCL) ─────────────────→  SCL
- GND        ─────────────────── GND
- 3.3V/5V    ─────────────────── VCC
+Pico 2W                         LCD 16×2 I2C (PCF8574 @ 0x27)
+ GP2  (I2C1 SDA) ─────────────→  SDA
+ GP3  (I2C1 SCL) ─────────────→  SCL
+ GND             ────────────── GND
+ 3.3V            ────────────── VCC
 
-Pico 2                          Buttons (active LOW, internal pull-up)
- GP20 (IN)  ────── BTN ── GND   Prev track / Vol down (Vol mode)
- GP21 (IN)  ────── BTN ── GND   Next track / Vol up   (Vol mode)
- GP22 (IN)  ────── BTN ── GND   Play/Stop  / Exit Vol mode
+Pico 2W                         Buttons (active LOW, internal pull-up)
+ GP20 (IN) ── BTN ── GND        Prev / Vol−
+ GP21 (IN) ── BTN ── GND        Next / Vol+
+ GP22 (IN) ── BTN ── GND        Play/Stop · Exit Vol mode
 ```
+
+### Pin Summary
+
+| Pin | ทิศทาง | อุปกรณ์ |
+|-----|--------|---------|
+| GP0 | OUT | DFPlayer RX (UART0 TX) |
+| GP1 | IN  | DFPlayer TX (UART0 RX) |
+| GP2 | I/O | LCD SDA (I2C1) |
+| GP3 | I/O | LCD SCL (I2C1) |
+| GP15 | IN | DFPlayer BUSY |
+| GP20 | IN | BTN Prev / Vol− |
+| GP21 | IN | BTN Next / Vol+ |
+| GP22 | IN | BTN Play/Stop |
+| LED | OUT | CYW43 LED (blink = WiFi alive) |
 
 ---
 
 ## Features
 
-- รับคำสั่ง text ผ่าน USB Serial — ควบคุมได้จาก PC
-- ปุ่มกดจริง GP20/GP21/GP22 — เลือก track, play/stop, ปรับ volume
-- ควบคุม play / stop / next / prev / volume / repeat ผ่าน Serial
-- แสดงสถานะ track และ volume บน LCD 16x2 แบบ real-time
-- BUSY pin monitor — แจ้งทาง Serial เมื่อเริ่มเล่นและจบ
-- Status LED blink GP25 บอกว่าบอร์ดยังทำงานอยู่
-- Repeat mode filter — ไม่ spam Serial ระหว่าง loop
+- **Web UI** — dark-theme responsive, AJAX real-time 300ms, ใช้งานได้บนมือถือ
+- **Play/Pause toggle** — ปุ่มเดียว, icon เปลี่ยนตาม state
+- **Volume slider** — slide แล้วส่งอัตโนมัติ debounce 400ms
+- **Repeat mode** — All / One / Off พร้อม highlight ปุ่ม active
+- **LCD** — แสดง track, vol, status (Play/Paus/Stop), repeat mode
+- **Buttons** — TRACK mode / VOL mode (hold 2s เข้า VOL mode)
+- **Serial commands** — ควบคุมผ่าน USB CDC
 
 ---
 
 ## Serial Commands
 
-พิมพ์คำสั่งแล้วกด Enter ผ่าน Serial Monitor (baud ใดก็ได้, USB CDC)
-
 | คำสั่ง | ผลลัพธ์ |
 |--------|---------|
-| `play <n>` | เล่น track ที่ n (1–99) |
-| `stop` | หยุดเล่น |
+| `play <n>` | เล่น track n (1–99) |
+| `stop` | หยุด |
+| `pause` | พัก |
 | `next` | track ถัดไป |
 | `prev` | track ก่อนหน้า |
 | `vol <n>` | ตั้ง volume (0–30) |
-| `repeat all` | วนเล่นทุก track |
-| `repeat one` | วนเล่น track ปัจจุบัน |
+| `repeat all` | วนทุก track |
+| `repeat one` | วน track ปัจจุบัน |
 | `repeat off` | ปิด repeat |
-
-ตัวอย่าง:
-```
-> play 1
-OK: playing track 1
-INFO: playing
-INFO: track finished
-> vol 20
-OK: volume set to 20
-> repeat all
-OK: repeat all
-> stop
-OK: stopped
-> play 99
-ERR: track out of range (usage: play <1-99>)
-> xyz
-ERR: unknown command
-```
 
 ---
 
 ## LCD Display
 
-**Track mode** (ปกติ)
+**Track mode**
 ```
 ┌────────────────┐
-│ Track: 1       │
-│ Vol:20 Playing │
+│ Track: 3       │
+│ V:20 Play [ALL]│
 └────────────────┘
 ```
 
-**Vol mode** (hold GP20 หรือ GP21 ค้าง 2 วินาที)
+**Vol mode** (hold GP20/21 ค้าง 2s)
 ```
 ┌────────────────┐
 │ [ Vol Mode ]   │
@@ -105,85 +204,13 @@ ERR: unknown command
 └────────────────┘
 ```
 
-อัปเดตทุก 500ms
-
----
-
-## FreeRTOS Task Structure
-
-```mermaid
-flowchart TD
-    BOOT([Boot / main]) --> Q[xQueueCreate]
-    Q --> T1 & T2 & T3 & T4 & T5
-
-    subgraph T1["task_uart_rx  •  priority 2"]
-        direction TB
-        A1[getchar_timeout_us\n10ms poll] --> A2{newline?}
-        A2 -- yes --> A3[parse_and_enqueue]
-        A2 -- no --> A4[buffer char]
-        A4 --> A1
-        A3 --> A1
-    end
-
-    subgraph T2["task_dfplayer  •  priority 1"]
-        direction TB
-        B0[dfplayer_init\nvol 20] --> B1[xQueueReceive\n200ms timeout]
-        B1 --> B2{cmd received?}
-        B2 -- yes --> B3[switch cmd\ndrive DFPlayer]
-        B3 --> B4[update lcd_state]
-        B4 --> B5[check BUSY pin]
-        B2 -- no --> B5
-        B5 --> B1
-    end
-
-    subgraph T3["task_lcd  •  priority 1"]
-        direction TB
-        C0[lcd_init] --> C1[read lcd_state]
-        C1 --> C2[lcd_buff_printf]
-        C2 --> C3[put_buff_to_lcd]
-        C3 --> C4[vTaskDelay 500ms]
-        C4 --> C1
-    end
-
-    subgraph T4["task_status_led  •  priority 1"]
-        direction TB
-        D0[gpio_init GP25] --> D1[LED ON]
-        D1 --> D2[vTaskDelay 250ms]
-        D2 --> D3[LED OFF]
-        D3 --> D4[vTaskDelay 250ms]
-        D4 --> D1
-    end
-
-    subgraph T5["task_buttons  •  priority 1"]
-        direction TB
-        E0[gpio_init GP20/21/22\npull-up] --> E1[vTaskDelay 50ms]
-        E1 --> E2{UI mode?}
-        E2 -- TRACK --> ET1{press / hold?}
-        ET1 -- GP20/21 short --> ET2[select track\nupdate lcd_state]
-        ET1 -- GP20/21 hold 2s --> ET3[switch to VOL mode]
-        ET1 -- GP22 --> ET4{playing?}
-        ET4 -- yes --> ET5[CMD_STOP]
-        ET4 -- no --> ET6[CMD_PLAY track]
-        ET2 & ET3 & ET5 & ET6 --> E1
-        E2 -- VOL --> EV1{button?}
-        EV1 -- GP20 --> EV2[CMD_VOLUME--]
-        EV1 -- GP21 --> EV3[CMD_VOLUME++]
-        EV1 -- GP22 --> EV4[switch to TRACK mode]
-        EV2 & EV3 & EV4 --> E1
-    end
-
-    A3 -- "cmd_queue\ncommand_t" --> B1
-    ET5 & ET6 & EV2 & EV3 -- "cmd_queue\ncommand_t" --> B1
-    B4 -- "lcd_state\nvolatile struct" --> C1
+**WiFi page** (สลับทุก 3s)
 ```
-
-| Task | Priority | Stack | หน้าที่ |
-|------|----------|-------|---------|
-| `task_uart_rx` | 2 | 512 words | รับ command จาก USB, parse, ส่ง Queue |
-| `task_dfplayer` | 1 | 512 words | ขับ DFPlayer, monitor BUSY pin, อัปเดต lcd_state |
-| `task_lcd` | 1 | 512 words | อ่าน lcd_state แล้วแสดงบน LCD ทุก 500ms |
-| `task_status_led` | 1 | 256 words | blink LED GP25 ทุก 250ms |
-| `task_buttons` | 1 | 256 words | poll GP20/21/22 ทุก 50ms, TRACK/VOL mode, long-press 2s |
+┌────────────────┐
+│ WiFi: OK       │
+│ 192.168.0.25   │
+└────────────────┘
+```
 
 ---
 
@@ -191,16 +218,23 @@ flowchart TD
 
 ```
 MP3 Control Project/
+├── fs/
+│   ├── index.shtml         # Web UI (dark theme, AJAX)
+│   └── status.shtml        # JSON status endpoint (SSI)
 ├── inc/
-│   ├── FreeRTOSConfig.h     # ตั้งค่า FreeRTOS kernel
-│   ├── dfplayer.h           # DFPlayer Mini API
-│   └── i2c_lcd.h            # LCD 16x2 I2C API
-├── lib/
-│   └── FreeRTOS-Kernel/     # FreeRTOS submodule
+│   ├── dfplayer.h          # DFPlayer Mini API
+│   ├── fsdata_custom.c     # lwIP embedded filesystem (generated)
+│   ├── i2c_lcd.h           # LCD 16×2 I2C API
+│   ├── lwipopts.h          # lwIP config (NO_SYS=1 poll mode)
+│   ├── main_shared.h       # shared types: command_t, lcd_state_t
+│   └── web_server.h        # WiFi credentials + core1_wifi_entry()
 ├── src/
-│   ├── main.c               # Tasks, Queue, command parser, lcd_state
-│   ├── dfplayer.c           # UART0 driver สำหรับ DFPlayer Mini
-│   └── i2c_lcd.c            # I2C driver สำหรับ LCD 16x2 (PCF8574)
+│   ├── main.c              # Core 0 bare-metal loop
+│   ├── dfplayer.c          # UART0 driver
+│   ├── i2c_lcd.c           # I2C LCD driver (PCF8574)
+│   └── web_server.c        # Core 1: CYW43 + lwIP + CGI + SSI
+├── lib/
+│   └── FreeRTOS-Kernel/    # (ไม่ได้ใช้ใน branch นี้)
 ├── CMakeLists.txt
 └── pico_sdk_import.cmake
 ```
@@ -211,21 +245,15 @@ MP3 Control Project/
 
 **ต้องการ:** Pico SDK 2.2.0, ARM GCC 15.2, CMake, Ninja
 
-```powershell
-$cmake   = "C:\Users\<user>\.pico-sdk\cmake\v3.31.5\bin\cmake.exe"
-$ninja   = "C:\Users\<user>\.pico-sdk\ninja\v1.12.1\ninja.exe"
-$sdk     = "C:\Users\<user>\.pico-sdk\sdk\2.2.0"
-$project = "<path>\MP3 Control Project"
-
-& $cmake -S "$project" -B "$project\build" `
-  -DPICO_SDK_PATH="$sdk" -DPICO_BOARD=pico2 `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DCMAKE_MAKE_PROGRAM="$ninja" -G Ninja
-
-& $ninja -C "$project\build"
+```bash
+cd build
+cmake .. -G Ninja -DPICO_BOARD=pico2_w
+ninja
 ```
 
-ไฟล์ `.uf2` จะอยู่ที่ `build/MP3_Control_Project.uf2` — กด BOOTSEL แล้วลาก drop ลงบอร์ดได้เลย
+ไฟล์ `build/MP3_Control_Project.uf2` — กด BOOTSEL แล้วลาก drop ลงบอร์ดได้เลย
+
+> **WiFi credentials** อยู่ใน `inc/web_server.h` — เปลี่ยน `WIFI_SSID` และ `WIFI_PASS` ก่อน build
 
 ---
 
@@ -233,6 +261,8 @@ $project = "<path>\MP3 Control Project"
 
 | Branch | คำอธิบาย |
 |--------|----------|
-| `main` | พัฒนาหลัก |
-| `feature/dfplayer-uart-control-demo` | Demo DFPlayer Mini + LCD |
+| `feature/lwip-web-control` | **branch นี้** — bare-metal multicore + Web UI |
+| `feature/dfplayer-uart-control-demo` | Demo DFPlayer + LCD (FreeRTOS) |
+| `lcd_i2c_exsample` | ตัวอย่าง LCD I2C (FreeRTOS) |
 | `Blink_Test` | LED blink ทดสอบบอร์ด |
+| `main` / `master` | พัฒนาหลัก |
