@@ -12,39 +12,36 @@
 ## System Architecture
 
 ```mermaid
-block-beta
-  columns 3
+graph TB
+    BR(["🌐 Browser\nAJAX 300 ms"])
 
-  block:core0["⚙️ Core 0  (bare-metal loop)"]:2
-    columns 2
-    uart["UART RX\nparse command"]
-    btn["Buttons\nGP20 / 21 / 22"]
-    dfp["DFPlayer driver\nUART0"]
-    lcd["LCD update\n16×2 I2C"]
-    fifo_r["FIFO bridge\n← Core 1"]
-    state["lcd_state\n(volatile)"]
-  end
+    subgraph C1["📡 Core 1 — CYW43 poll loop"]
+        HTTPD["lwIP httpd\nCGI: รับคำสั่ง → FIFO\nSSI: อ่าน lcd_state → JSON"]
+    end
 
-  block:core1["📡 Core 1  (CYW43 poll loop)"]:1
-    columns 1
-    wifi["CYW43 WiFi\ncyw43_arch_poll()"]
-    http["lwIP httpd\nCGI + SSI"]
-    fifo_w["multicore_fifo\n_push_blocking()"]
-  end
+    FIFO["⇅ HW FIFO  8 entries\ncmd_type &lt;&lt; 16 | arg"]
 
-  space:2
-  fifo_hw["HW FIFO\n8 entries"]
-  space
+    subgraph C0["⚙️ Core 0 — bare-metal loop"]
+        CMDQ["ring buffer  command_t × 8"]
+        DRV["dfplayer_run · lcd_update"]
+        STATE[("lcd_state\nvolatile")]
+    end
 
-  dfp_hw(["DFPlayer Mini\nSPK"])
-  lcd_hw(["LCD 16×2\nPCF8574"])
-  browser(["Browser\nAJAX 300 ms"])
+    DFP(["🎵 DFPlayer Mini\nUART0  GP0 / GP1"])
+    LCD(["🖥️ LCD 16×2\nI2C1  GP2 / GP3"])
+    BTNS(["🎛️ Buttons\nGP20 / 21 / 22"])
+    SER(["💻 USB Serial\nCDC"])
 
-  dfp --> dfp_hw
-  lcd --> lcd_hw
-  fifo_r --> fifo_hw
-  fifo_w --> fifo_hw
-  http <--> browser
+    BR      <-->|HTTP|          HTTPD
+    HTTPD   -->|CGI push|       FIFO
+    HTTPD   -. "SSI read" .->  STATE
+    FIFO    -->|fifo_poll|      CMDQ
+    BTNS    -->                 CMDQ
+    SER     -->                 CMDQ
+    CMDQ    -->                 DRV
+    DRV     -->                 STATE
+    DRV     -->|UART frames|    DFP
+    DRV     -->|I2C|            LCD
 ```
 
 ---
