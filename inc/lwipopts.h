@@ -45,10 +45,7 @@
 
 // HTTP server
 #define LWIP_HTTPD                      1
-#define LWIP_HTTPD_SSI                  1
 #define LWIP_HTTPD_CGI                  1
-#define LWIP_HTTPD_SSI_INCLUDE_TAG      0
-#define LWIP_HTTPD_MAX_TAG_INSERT_LEN   96
 #define LWIP_HTTPD_DYNAMIC_HEADERS      1
 #define LWIP_HTTPD_CUSTOM_FILES         1
 
