@@ -28,6 +28,15 @@ project(PicoPDU C CXX ASM)
 
 pico_sdk_init()
 
+# CMSIS-DSP — CMSIS Core headers อยู่ใน pico-sdk btstack
+set(CMSISCORE "$ENV{USERPROFILE}/.pico-sdk/sdk/2.2.0/lib/btstack/port/stm32-f4discovery-usb/Drivers/CMSIS/Core")
+set(CMSISDSP_INSTALL OFF CACHE BOOL "" FORCE)
+set(CMSISDSP ${CMAKE_CURRENT_SOURCE_DIR}/lib/CMSIS-DSP)
+set(ARM_CPU "cortex-m33")
+set(ARM_ARCH_PROFILE "M")
+set(DISABLEFLOAT16 ON)
+add_subdirectory(${CMSISDSP} CMSIS-DSP)
+
 add_executable(PicoPDU src/main.c)
 
 pico_set_program_name(PicoPDU "PicoPDU")
@@ -36,9 +45,8 @@ pico_set_program_version(PicoPDU "0.1")
 pico_enable_stdio_uart(PicoPDU 0)
 pico_enable_stdio_usb(PicoPDU 1)
 
-target_link_libraries(PicoPDU pico_stdlib m)
+target_link_libraries(PicoPDU pico_stdlib m CMSISDSP)
 
-# pico-sdk ตั้ง -march=armv8-m.main+fp+dsp ไว้แล้ว — DSP/FPU enable โดย default
 target_compile_options(PicoPDU PRIVATE -O2)
 
 target_include_directories(PicoPDU PRIVATE ${CMAKE_CURRENT_LIST_DIR})

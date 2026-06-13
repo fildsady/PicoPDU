@@ -3,3 +3,6 @@
 	url = https://github.com/raspberrypi/FreeRTOS-Kernel.git
 
 #  git submodule add -f https://github.com/raspberrypi/FreeRTOS-Kernel.git lib/FreeRTOS-Kernel
+[submodule "lib/CMSIS-DSP"]
+	path = lib/CMSIS-DSP
+	url = https://github.com/ARM-software/CMSIS-DSP
