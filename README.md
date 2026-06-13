@@ -1,209 +1,25 @@
-# MP3 Control Project
+# PicoPDU
 
-ระบบควบคุม DFPlayer Mini ผ่าน Serial command บน Raspberry Pi Pico 2 (RP2350) + FreeRTOS  
-แสดงสถานะผ่าน LCD 16x2 I2C และ LED blink
-
----
-
-## Hardware
-
-| อุปกรณ์ | รายละเอียด |
-|---------|------------|
-| MCU | Raspberry Pi Pico 2 (RP2350) |
-| MP3 Module | DFPlayer Mini |
-| Display | LCD 16x2 I2C (PCF8574, address 0x27) |
-| Interface | USB CDC (Serial Monitor) รับคำสั่งจาก PC |
-
-### Wiring
-
-```
-Pico 2                          DFPlayer Mini
- GP0  (TX)  ─────────────────→  RX
- GP1  (RX)  ←─────────────────  TX
- GP15 (IN)  ←─────────────────  BUSY  (LOW = playing, HIGH = idle)
- GND        ─────────────────── GND
- 3.3V/5V    ─────────────────── VCC
-                                 SPK+ → ลำโพง
-                                 SPK- → ลำโพง
-
-Pico 2                          LCD 16x2 I2C
- GP2  (SDA) ─────────────────→  SDA
- GP3  (SCL) ─────────────────→  SCL
- GND        ─────────────────── GND
- 3.3V/5V    ─────────────────── VCC
-
-Pico 2                          Buttons (active LOW, internal pull-up)
- GP20 (IN)  ────── BTN ── GND   Prev track / Vol down (Vol mode)
- GP21 (IN)  ────── BTN ── GND   Next track / Vol up   (Vol mode)
- GP22 (IN)  ────── BTN ── GND   Play/Stop  / Exit Vol mode
-```
+ระบบควบคุมเปิด/ปิดอุปกรณ์ผ่านเครือข่าย บน **Raspberry Pi Pico 2W (RP2350)**
+รองรับทั้ง **WiFi** และ **Ethernet** — ควบคุมผ่าน Web UI, REST API หรือ MQTT
 
 ---
 
-## Features
+## สถาปัตยกรรม
 
-- รับคำสั่ง text ผ่าน USB Serial — ควบคุมได้จาก PC
-- ปุ่มกดจริง GP20/GP21/GP22 — เลือก track, play/stop, ปรับ volume
-- ควบคุม play / stop / next / prev / volume / repeat ผ่าน Serial
-- แสดงสถานะ track และ volume บน LCD 16x2 แบบ real-time
-- BUSY pin monitor — แจ้งทาง Serial เมื่อเริ่มเล่นและจบ
-- Status LED blink GP25 บอกว่าบอร์ดยังทำงานอยู่
-- Repeat mode filter — ไม่ spam Serial ระหว่าง loop
+- **Core 0** — application loop: relay control, GPIO, serial command
+- **Core 1** — CYW43 WiFi poll + lwIP HTTP server (bare-metal, ไม่ใช้ RTOS)
+- **Ethernet** — รองรับ W5500 / ENC28J60 ผ่าน SPI (planned)
+- **Web UI** — dark-theme responsive, AJAX real-time, ใช้งานได้บนมือถือ / PC
 
 ---
 
-## Serial Commands
+## Board Support
 
-พิมพ์คำสั่งแล้วกด Enter ผ่าน Serial Monitor (baud ใดก็ได้, USB CDC)
-
-| คำสั่ง | ผลลัพธ์ |
-|--------|---------|
-| `play <n>` | เล่น track ที่ n (1–99) |
-| `stop` | หยุดเล่น |
-| `next` | track ถัดไป |
-| `prev` | track ก่อนหน้า |
-| `vol <n>` | ตั้ง volume (0–30) |
-| `repeat all` | วนเล่นทุก track |
-| `repeat one` | วนเล่น track ปัจจุบัน |
-| `repeat off` | ปิด repeat |
-
-ตัวอย่าง:
-```
-> play 1
-OK: playing track 1
-INFO: playing
-INFO: track finished
-> vol 20
-OK: volume set to 20
-> repeat all
-OK: repeat all
-> stop
-OK: stopped
-> play 99
-ERR: track out of range (usage: play <1-99>)
-> xyz
-ERR: unknown command
-```
-
----
-
-## LCD Display
-
-**Track mode** (ปกติ)
-```
-┌────────────────┐
-│ Track: 1       │
-│ Vol:20 Playing │
-└────────────────┘
-```
-
-**Vol mode** (hold GP20 หรือ GP21 ค้าง 2 วินาที)
-```
-┌────────────────┐
-│ [ Vol Mode ]   │
-│ < Vol: 20 >    │
-└────────────────┘
-```
-
-อัปเดตทุก 500ms
-
----
-
-## FreeRTOS Task Structure
-
-```mermaid
-flowchart TD
-    BOOT([Boot / main]) --> Q[xQueueCreate]
-    Q --> T1 & T2 & T3 & T4 & T5
-
-    subgraph T1["task_uart_rx  •  priority 2"]
-        direction TB
-        A1[getchar_timeout_us\n10ms poll] --> A2{newline?}
-        A2 -- yes --> A3[parse_and_enqueue]
-        A2 -- no --> A4[buffer char]
-        A4 --> A1
-        A3 --> A1
-    end
-
-    subgraph T2["task_dfplayer  •  priority 1"]
-        direction TB
-        B0[dfplayer_init\nvol 20] --> B1[xQueueReceive\n200ms timeout]
-        B1 --> B2{cmd received?}
-        B2 -- yes --> B3[switch cmd\ndrive DFPlayer]
-        B3 --> B4[update lcd_state]
-        B4 --> B5[check BUSY pin]
-        B2 -- no --> B5
-        B5 --> B1
-    end
-
-    subgraph T3["task_lcd  •  priority 1"]
-        direction TB
-        C0[lcd_init] --> C1[read lcd_state]
-        C1 --> C2[lcd_buff_printf]
-        C2 --> C3[put_buff_to_lcd]
-        C3 --> C4[vTaskDelay 500ms]
-        C4 --> C1
-    end
-
-    subgraph T4["task_status_led  •  priority 1"]
-        direction TB
-        D0[gpio_init GP25] --> D1[LED ON]
-        D1 --> D2[vTaskDelay 250ms]
-        D2 --> D3[LED OFF]
-        D3 --> D4[vTaskDelay 250ms]
-        D4 --> D1
-    end
-
-    subgraph T5["task_buttons  •  priority 1"]
-        direction TB
-        E0[gpio_init GP20/21/22\npull-up] --> E1[vTaskDelay 50ms]
-        E1 --> E2{UI mode?}
-        E2 -- TRACK --> ET1{press / hold?}
-        ET1 -- GP20/21 short --> ET2[select track\nupdate lcd_state]
-        ET1 -- GP20/21 hold 2s --> ET3[switch to VOL mode]
-        ET1 -- GP22 --> ET4{playing?}
-        ET4 -- yes --> ET5[CMD_STOP]
-        ET4 -- no --> ET6[CMD_PLAY track]
-        ET2 & ET3 & ET5 & ET6 --> E1
-        E2 -- VOL --> EV1{button?}
-        EV1 -- GP20 --> EV2[CMD_VOLUME--]
-        EV1 -- GP21 --> EV3[CMD_VOLUME++]
-        EV1 -- GP22 --> EV4[switch to TRACK mode]
-        EV2 & EV3 & EV4 --> E1
-    end
-
-    A3 -- "cmd_queue\ncommand_t" --> B1
-    ET5 & ET6 & EV2 & EV3 -- "cmd_queue\ncommand_t" --> B1
-    B4 -- "lcd_state\nvolatile struct" --> C1
-```
-
-| Task | Priority | Stack | หน้าที่ |
-|------|----------|-------|---------|
-| `task_uart_rx` | 2 | 512 words | รับ command จาก USB, parse, ส่ง Queue |
-| `task_dfplayer` | 1 | 512 words | ขับ DFPlayer, monitor BUSY pin, อัปเดต lcd_state |
-| `task_lcd` | 1 | 512 words | อ่าน lcd_state แล้วแสดงบน LCD ทุก 500ms |
-| `task_status_led` | 1 | 256 words | blink LED GP25 ทุก 250ms |
-| `task_buttons` | 1 | 256 words | poll GP20/21/22 ทุก 50ms, TRACK/VOL mode, long-press 2s |
-
----
-
-## โครงสร้างไฟล์
-
-```
-MP3 Control Project/
-├── inc/
-│   ├── FreeRTOSConfig.h     # ตั้งค่า FreeRTOS kernel
-│   ├── dfplayer.h           # DFPlayer Mini API
-│   └── i2c_lcd.h            # LCD 16x2 I2C API
-├── lib/
-│   └── FreeRTOS-Kernel/     # FreeRTOS submodule
-├── src/
-│   ├── main.c               # Tasks, Queue, command parser, lcd_state
-│   ├── dfplayer.c           # UART0 driver สำหรับ DFPlayer Mini
-│   └── i2c_lcd.c            # I2C driver สำหรับ LCD 16x2 (PCF8574)
-├── CMakeLists.txt
-└── pico_sdk_import.cmake
-```
+| Board | LED | Network |
+|-------|-----|---------|
+| Pico 2W (`pico2_w`) | CYW43 via `cyw43_arch_gpio_put` | WiFi (CYW43439) |
+| Pico 2 (`pico2`) | GPIO 25 | Ethernet module (SPI) |
 
 ---
 
@@ -211,21 +27,32 @@ MP3 Control Project/
 
 **ต้องการ:** Pico SDK 2.2.0, ARM GCC 15.2, CMake, Ninja
 
-```powershell
-$cmake   = "C:\Users\<user>\.pico-sdk\cmake\v3.31.5\bin\cmake.exe"
-$ninja   = "C:\Users\<user>\.pico-sdk\ninja\v1.12.1\ninja.exe"
-$sdk     = "C:\Users\<user>\.pico-sdk\sdk\2.2.0"
-$project = "<path>\MP3 Control Project"
-
-& $cmake -S "$project" -B "$project\build" `
-  -DPICO_SDK_PATH="$sdk" -DPICO_BOARD=pico2 `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DCMAKE_MAKE_PROGRAM="$ninja" -G Ninja
-
-& $ninja -C "$project\build"
+```bash
+cd build
+cmake .. -G Ninja -DPICO_BOARD=pico2_w \
+  -DPython3_EXECUTABLE=$HOME/.pico-sdk/python/3.13.7/python.exe
+ninja
 ```
 
-ไฟล์ `.uf2` จะอยู่ที่ `build/MP3_Control_Project.uf2` — กด BOOTSEL แล้วลาก drop ลงบอร์ดได้เลย
+> **Windows:** Python3 ต้องชี้ไปที่ `%USERPROFILE%\.pico-sdk\python\3.13.7\python.exe`
+> (Windows Store stub ใช้ไม่ได้กับ CMake)
+
+ไฟล์ `build/PicoPDU.uf2` — กด BOOTSEL แล้วลาก drop ลงบอร์ดได้เลย
+
+---
+
+## โครงสร้างไฟล์
+
+```
+PicoPDU/
+├── src/
+│   └── main.c               # LED blink template (starting point)
+├── lib/
+│   └── FreeRTOS-Kernel/     # submodule — พร้อมใช้เมื่อต้องการ RTOS
+├── CMakeLists.txt
+├── CMakePresets.json        # preset: pico2w-release
+└── pico_sdk_import.cmake
+```
 
 ---
 
@@ -233,6 +60,32 @@ $project = "<path>\MP3 Control Project"
 
 | Branch | คำอธิบาย |
 |--------|----------|
-| `main` | พัฒนาหลัก |
-| `feature/dfplayer-uart-control-demo` | Demo DFPlayer Mini + LCD |
+| `main` | **branch นี้** — LED blink template, starting point สำหรับพัฒนา |
+| `feature/lwip-web-control` | bare-metal multicore + lwIP Web UI (ตัวอย่าง WiFi) |
+| `feature/dfplayer-uart-control-demo` | ตัวอย่าง UART + LCD (FreeRTOS) |
 | `Blink_Test` | LED blink ทดสอบบอร์ด |
+
+---
+
+## FreeRTOS
+
+FreeRTOS-Kernel submodule พร้อมอยู่แล้วใน `lib/` เปิดใช้โดย uncomment ใน `CMakeLists.txt`:
+
+```cmake
+set(FREERTOS_KERNEL_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/FreeRTOS-Kernel)
+include(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2350_ARM_NTZ/FreeRTOS_Kernel_import.cmake)
+```
+
+และเปลี่ยน link library จาก `pico_cyw43_arch_none` เป็น `pico_cyw43_arch_lwip_sys_freertos`
+
+---
+
+## Roadmap
+
+- [ ] Relay output control (GPIO)
+- [ ] Web UI — outlet on/off panel
+- [ ] REST API — `GET /relay/1/on`
+- [ ] Ethernet support (W5500 SPI)
+- [ ] MQTT client
+- [ ] Schedule / timer
+- [ ] Current sensing (ADC)
