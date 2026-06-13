@@ -28,7 +28,7 @@ project(PicoPDU C CXX ASM)
 
 pico_sdk_init()
 
-add_executable(PicoPDU src/main.c)
+add_executable(PicoPDU src/main.c src/i2c_lcd.c)
 
 pico_set_program_name(PicoPDU "PicoPDU")
 pico_set_program_version(PicoPDU "0.1")
@@ -36,14 +36,23 @@ pico_set_program_version(PicoPDU "0.1")
 pico_enable_stdio_uart(PicoPDU 0)
 pico_enable_stdio_usb(PicoPDU 1)
 
-target_link_libraries(PicoPDU pico_stdlib)
+target_link_libraries(PicoPDU
+    pico_stdlib
+    pico_cyw43_arch_lwip_poll
+    pico_lwip_mqtt
+    hardware_i2c
+)
 
-# Pico 2W ต้องการ CYW43 driver เพื่อควบคุม LED ผ่าน WiFi chip
-if(PICO_CYW43_SUPPORTED)
-    target_link_libraries(PicoPDU pico_cyw43_arch_none)
-endif()
+target_include_directories(PicoPDU PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/inc
+)
 
-target_include_directories(PicoPDU PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+target_compile_definitions(PicoPDU PRIVATE
+    MQTT_OUTPUT_RINGBUF_SIZE=8192
+    MQTT_VAR_HEADER_BUFFER_LEN=512
+    MQTT_REQ_MAX_IN_FLIGHT=20
+)
 
 target_link_options(${PROJECT_NAME} PRIVATE
     -Wl,--print-memory-usage
